@@ -22,12 +22,11 @@ try {
     iconDirs.forEach(d => {
         fs.copyFileSync('malachite_icon.png', `app/src/main/res/mipmap-${d}/ic_launcher.png`);
     });
-    console.log("✅ Custom icon successfully applied!");
 } catch (e) {
-    console.log("⚠️  'malachite_icon.png' not found. App will build with default Android icon.");
+    console.log("⚠️ 'malachite_icon.png' not found. Using default.");
 }
 
-// 2. Android Manifest (Added Storage + Query Permissions)
+// 2. Android Manifest (Added Legacy Storage Bypass + Cleartext Traffic)
 fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.jaexo.malachite">
     <uses-permission android:name="android.permission.INTERNET" />
@@ -36,7 +35,13 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     
-    <application android:label="Malachite" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+    <application 
+        android:label="Malachite" 
+        android:icon="@mipmap/ic_launcher" 
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true">
+        
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -51,7 +56,7 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
     </application>
 </manifest>`);
 
-// 3. MainActivity (Added Storage Prompts + Native File Read/Write API)
+// 3. MainActivity (Unlocked CORS for Thumbnails + Dynamic Storage Path Resolution)
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MainActivity.java', `package com.jaexo.malachite;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -79,7 +84,6 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         setContentView(webView);
 
-        // Permissions Request Logic
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 try {
@@ -98,7 +102,7 @@ public class MainActivity extends Activity {
 
         String listeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
         if (listeners == null || !listeners.contains(getPackageName())) {
-            Toast.makeText(this, "Please ENABLE Notification Access for Malachite to read Music", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "ENABLE Notification Access for Malachite", Toast.LENGTH_LONG).show();
             startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         }
 
@@ -106,6 +110,11 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
 
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
@@ -118,19 +127,25 @@ public class MainActivity extends Activity {
             @JavascriptInterface
             public String readFile(String path) {
                 try {
+                    if(path.startsWith("/storage/emulated/0/")) {
+                        path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
+                    }
                     File f = new File(path);
-                    if (!f.exists()) return "";
+                    if (!f.exists()) return "{}";
                     byte[] bytes = new byte[(int) f.length()];
                     FileInputStream in = new FileInputStream(f);
                     in.read(bytes);
                     in.close();
                     return new String(bytes, "UTF-8");
-                } catch (Exception e) { return ""; }
+                } catch (Exception e) { return "{}"; }
             }
 
             @JavascriptInterface
             public void writeFile(String path, String data) {
                 try {
+                    if(path.startsWith("/storage/emulated/0/")) {
+                        path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
+                    }
                     File f = new File(path);
                     if(!f.getParentFile().exists()) f.getParentFile().mkdirs();
                     FileOutputStream out = new FileOutputStream(f);
@@ -156,7 +171,7 @@ public class MainActivity extends Activity {
     }
 }`);
 
-// 4. MediaListener (No changes, logic is identical)
+// 4. MediaListener
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MediaListener.java', `package com.jaexo.malachite;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -173,7 +188,6 @@ import java.util.List;
 
 public class MediaListener extends NotificationListenerService {
     private MediaController activeController;
-
     @Override public void onCreate() {
         super.onCreate();
         registerReceiver(new BroadcastReceiver() {
@@ -188,7 +202,6 @@ public class MediaListener extends NotificationListenerService {
             }
         }, new IntentFilter("MEDIA_COMMAND"));
     }
-
     @Override public void onListenerConnected() { update(); }
     @Override public void onNotificationPosted(android.service.notification.StatusBarNotification s) { update(); }
     @Override public void onNotificationRemoved(android.service.notification.StatusBarNotification s) { update(); }
@@ -214,29 +227,11 @@ public class MediaListener extends NotificationListenerService {
 }`);
 
 // 5. Build Configs
-fs.writeFileSync('settings.gradle', 'pluginManagement {\n  repositories {\n    google()\n    mavenCentral()\n    gradlePluginPortal()\n  }\n}\ndependencyResolutionManagement {\n  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n  repositories {\n    google()\n    mavenCentral()\n  }\n}\nrootProject.name = "Malachite"\ninclude ":app"');
+fs.writeFileSync('settings.gradle', 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = "Malachite"\ninclude ":app"');
 fs.writeFileSync('build.gradle', 'plugins { id "com.android.application" version "8.1.1" apply false }');
-fs.writeFileSync('app/build.gradle', `plugins { id 'com.android.application' }
-android {
-    namespace 'com.jaexo.malachite'
-    compileSdk 34
-    defaultConfig { applicationId "com.jaexo.malachite"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
-}`);
+fs.writeFileSync('app/build.gradle', "plugins { id 'com.android.application' }\nandroid { namespace 'com.jaexo.malachite'; compileSdk 34; defaultConfig { applicationId 'com.jaexo.malachite'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0' } }");
 
-// 6. GitHub Action Configuration (v4 compliant)
-fs.writeFileSync('.github/workflows/build.yml', `name: Build APK
-on: [push, workflow_dispatch]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: 'temurin', java-version: '17' }
-      - uses: gradle/actions/setup-gradle@v3
-        with: { gradle-version: '8.4' }
-      - run: gradle assembleDebug
-      - uses: actions/upload-artifact@v4
-        with: { name: Malachite-APK, path: app/build/outputs/apk/debug/app-debug.apk }`);
+// 6. GitHub Actions
+fs.writeFileSync('.github/workflows/build.yml', "name: Build APK\non: [push, workflow_dispatch]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: { distribution: 'temurin', java-version: '17' }\n      - uses: gradle/actions/setup-gradle@v3\n        with: { gradle-version: '8.4' }\n      - run: gradle assembleDebug\n      - uses: actions/upload-artifact@v4\n        with: { name: Malachite-APK, path: app/build/outputs/apk/debug/app-debug.apk }");
 
-console.log("✅ Android project successfully regenerated with Storage Sync and Custom Icon!");
+console.log("✅ Fixes applied: CORS unlocked, Scoped Storage Bypassed, Dynamic Paths added.");

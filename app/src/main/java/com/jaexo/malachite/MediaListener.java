@@ -14,7 +14,6 @@ import java.util.List;
 
 public class MediaListener extends NotificationListenerService {
     private MediaController activeController;
-
     @Override public void onCreate() {
         super.onCreate();
         registerReceiver(new BroadcastReceiver() {
@@ -29,7 +28,6 @@ public class MediaListener extends NotificationListenerService {
             }
         }, new IntentFilter("MEDIA_COMMAND"));
     }
-
     @Override public void onListenerConnected() { update(); }
     @Override public void onNotificationPosted(android.service.notification.StatusBarNotification s) { update(); }
     @Override public void onNotificationRemoved(android.service.notification.StatusBarNotification s) { update(); }

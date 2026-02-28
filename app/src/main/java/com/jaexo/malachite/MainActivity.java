@@ -25,7 +25,6 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         setContentView(webView);
 
-        // Permissions Request Logic
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 try {
@@ -44,7 +43,7 @@ public class MainActivity extends Activity {
 
         String listeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
         if (listeners == null || !listeners.contains(getPackageName())) {
-            Toast.makeText(this, "Please ENABLE Notification Access for Malachite to read Music", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "ENABLE Notification Access for Malachite", Toast.LENGTH_LONG).show();
             startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         }
 
@@ -52,6 +51,11 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
 
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
@@ -64,19 +68,25 @@ public class MainActivity extends Activity {
             @JavascriptInterface
             public String readFile(String path) {
                 try {
+                    if(path.startsWith("/storage/emulated/0/")) {
+                        path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
+                    }
                     File f = new File(path);
-                    if (!f.exists()) return "";
+                    if (!f.exists()) return "{}";
                     byte[] bytes = new byte[(int) f.length()];
                     FileInputStream in = new FileInputStream(f);
                     in.read(bytes);
                     in.close();
                     return new String(bytes, "UTF-8");
-                } catch (Exception e) { return ""; }
+                } catch (Exception e) { return "{}"; }
             }
 
             @JavascriptInterface
             public void writeFile(String path, String data) {
                 try {
+                    if(path.startsWith("/storage/emulated/0/")) {
+                        path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
+                    }
                     File f = new File(path);
                     if(!f.getParentFile().exists()) f.getParentFile().mkdirs();
                     FileOutputStream out = new FileOutputStream(f);
