@@ -980,6 +980,51 @@
             const [artUrl, setArtUrl] = React.useState(null);
             const prevTrackRef = React.useRef("");
 
+            // Fetch album art: iTunes first, YouTube thumbnail fallback
+            React.useEffect(() => {
+                const title = media && media.title;
+                const artist = media && media.artist;
+                if (!title || title === 'SYSTEM IDLE' || !(media && media.active)) {
+                    setArtUrl(null);
+                    return;
+                }
+                const trackKey = `${title}||${artist}`;
+                if (prevTrackRef.current === trackKey) return;
+                prevTrackRef.current = trackKey;
+
+                let cancelled = false;
+                (async () => {
+                    // 1. Try iTunes Search API
+                    try {
+                        const q = encodeURIComponent(`${artist || ''} ${title}`.trim());
+                        const res = await fetch(`https://itunes.apple.com/search?term=${q}&media=music&limit=1`);
+                        const data = await res.json();
+                        if (!cancelled && data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
+                            setArtUrl(data.results[0].artworkUrl100.replace('100x100', '300x300'));
+                            return;
+                        }
+                    } catch (_) {}
+
+                    // 2. Fallback: YouTube Data API v3
+                    if (cancelled) return;
+                    try {
+                        const ytKey = 'AIzaSyB65Eig7UCAkmHf--6YhvGqZXCx7YxTNX0';
+                        const q = encodeURIComponent(`${artist || ''} ${title}`.trim());
+                        const res = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video&maxResults=1&key=${ytKey}`);
+                        const data = await res.json();
+                        if (!cancelled && data.items && data.items.length > 0) {
+                            const thumb = data.items[0].snippet.thumbnails;
+                            const url = (thumb.medium || thumb.default || thumb.high || {}).url;
+                            if (url) { setArtUrl(url); return; }
+                        }
+                    } catch (_) {}
+
+                    if (!cancelled) setArtUrl(null);
+                })();
+
+                return () => { cancelled = true; };
+            }, [media && media.title, media && media.artist, media && media.active]);
+
             const vibrate = (ms=40) => { if(navigator.vibrate) navigator.vibrate(ms); };
 
             React.useEffect(() => {
@@ -1010,9 +1055,7 @@
                 const poll = setInterval(() => {
                     fetch('/api/media/info').then(r=>r.json()).then(d => {
                         setMedia(d);
-                        if (!d.active && d.title === 'SYSTEM IDLE') {
-                            setArtUrl(null);
-                        }
+                        // artUrl is now managed by the media-watching useEffect below
                     }).catch(()=>{});
                 }, 3000);
                 return () => clearInterval(poll);
