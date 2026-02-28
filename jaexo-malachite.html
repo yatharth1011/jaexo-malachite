@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <link rel="icon" href="https://iili.io/qKNVaF1.png">
+   <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JAEXO MALACHITE</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/confetti-js@0.0.18/dist/index.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" />
+    <style>
+        /* FIX 1: Tame the timer font size */
+        .timer-big { 
+            /* Adjusted for split-screen: Max 4rem, scales with width but less aggressively */
+            font-size: clamp(2.5rem, 5vw, 4rem); 
+            width: 100%;
+            text-align: center;
+            white-space: nowrap;
+            line-height: 1;
+            margin: 10px 0;
+            font-variant-numeric: tabular-nums; 
+            letter-spacing: 2px; /* Slight tracking for better readability */
+        }
+        
+        .vol-bar { width: 80px; accent-color: var(--text); cursor: pointer; height: 4px; }
+        .search-input { background: #111; border: 1px solid var(--dim); color: var(--text); padding: 5px; width: 100%; font-family: var(--f-main); font-size: 0.8rem; border-radius: 4px 0 0 4px; }
+        .search-btn { background: var(--dim); border: none; color: #000; padding: 5px 10px; cursor: pointer; font-size: 0.7rem; font-weight: bold; }
+        .hud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 380px; }
+
+        /* NEW: Split Screen Logic */
+        .hud-content-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            overflow-y: auto;
+        }
+
+        /* Desktop/Tablet Landscape Mode */
+        @media screen and (min-width: 800px) and (orientation: landscape) {
+            .hud-content-wrapper {
+                flex-direction: row;
+                justify-content: center;
+                gap: 50px;
+            }
+            .hud-left-pane, .hud-right-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                max-width: 450px;
+                height: 80vh; 
+            }
+            .hud-right-pane {
+                border-top: none !important;
+                border-left: 2px solid #222;
+                padding-left: 50px;
+                padding-top: 0 !important;
+                margin-top: 0 !important;
+                /* Force visible on desktop */
+                display: flex !important;
+            }
+            .music-toggle-btn { display: none; } /* Hide expand button on desktop */
+        }
+        .vol-bar { width: 80px; accent-color: var(--text); cursor: pointer; height: 4px; }
+        .search-input { background: #111; border: 1px solid var(--dim); color: var(--text); padding: 5px; width: 100%; font-family: var(--f-main); font-size: 0.8rem; border-radius: 4px 0 0 4px; }
+        .search-btn { background: var(--dim); border: none; color: #000; padding: 5px 10px; cursor: pointer; font-size: 0.7rem; font-weight: bold; }
+        .search-btn.queue { background: #444; color: var(--text); border-radius: 0 4px 4px 0; }
+        .paused-indicator { animation: blink 1s infinite; color: var(--alert); font-size: 0.7rem; margin-top: 5px; }
+        @keyframes blink { 50% { opacity: 0; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes sway { 0%, 100% { transform: rotate(-10deg); text-shadow: 0 0 10px #f80; } 50% { transform: rotate(10deg); text-shadow: 0 0 20px #f00; } }
+        .lantern { display: inline-block; animation: sway 3s ease-in-out infinite; transform-origin: top center; margin: 0 2px; }
+        .overdrive-text { color: #fb0 !important; text-shadow: 0 0 15px #f80 !important; transition: all 1s ease; }
+        @media screen and (max-width: 480px) {
+            .engage-btn {
+                font-size: 0 !important;
+                width: 32px;
+                height: 32px;
+                padding: 0 !important;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 32px;
+            }
+            .engage-btn::after {
+                content: '●';
+                font-size: 14px;
+                display: block;
+            }
+            .hud-btn { padding: 12px 5px; font-size: 0.8rem; }
+            .timer-q { font-size: 1.1rem; margin-bottom: 10px; }
+            .overlay h2 { font-size: 1.2rem; }
+        }
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Hide scrollbar for IE, Edge and Firefox */
+        html, body {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        :root { --bg: #000; --text: #00ff41; --dim: #008f11; --accent: #00ff41; --alert: #f33; --panel: rgba(10,10,10,0.95); --f-main: 'JetBrains Mono', monospace; --f-hud: 'Orbitron', sans-serif; }
+        body.theme-redline { --text: #f00; --dim: #800; --accent: #f00; --alert: #fa0; }
+        body.theme-deepspace { --text: #00d4ff; --dim: #06a; --accent: #00d4ff; --alert: #f0f; }
+        body.theme-amber { --text: #fb0; --dim: #860; --accent: #fb0; --alert: #f40; }
+        body.theme-ghost { --text: #e0e0e0; --dim: #555; --accent: #fff; --alert: #80ef80; }
+        
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        /* NEW (Allows full page scrolling) */
+        body { 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: var(--f-main); 
+            margin: 0; 
+            min-height: 100vh; /* Allow it to grow taller than screen */
+            overflow-y: auto;  /* Enable normal window scrolling */
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        #battery-line { position: absolute; top: 0; left: 0; height: 2px; width: 0%; background: var(--text); box-shadow: 0 0 5px var(--text); z-index: 9999; }
+        #root { 
+            width: 100%; 
+            max-width: 900px; 
+            margin: auto; 
+            padding: 15px; 
+            display: flex; 
+            flex-direction: column; 
+            position: relative; 
+            height: auto; /* Let it grow with content */
+            overflow: visible; 
+        }
+        
+        /* HEADER & DOCK */
+        .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: flex-end; 
+            border-bottom: 1px dashed var(--dim); 
+            padding-bottom: 10px; 
+            margin-bottom: 10px; 
+            flex-shrink: 0; /* PREVENTS SQUISHING */
+        }
+
+        .command-deck { 
+            background: var(--panel); 
+            border: 1px solid var(--dim); 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin-bottom: 15px; 
+            max-height: 0; 
+            opacity: 0; 
+            overflow: hidden; 
+            transition: 0.4s ease; 
+            flex-shrink: 0; /* PREVENTS SQUISHING */
+        }
+        .command-deck.open { max-height: 600px; opacity: 1; }
+        
+        .deck-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+        .deck-btn { background: #000; border: 1px solid var(--dim); color: var(--text); padding: 8px 15px; border-radius: 4px; cursor: pointer; font-family: var(--f-hud); font-size: 0.75rem; text-transform: uppercase; }
+        .deck-btn:active { background: var(--text); color: #000; }
+        .deck-btn.danger { border-color: var(--alert); color: var(--alert); }
+
+        .sonic-deck { flex-grow: 1; display: flex; align-items: center; gap: 12px; border-left: 1px solid var(--dim); padding-left: 15px; overflow: hidden; }
+        .track-info { overflow: hidden; white-space: nowrap; flex-grow: 1; }
+        .adb-input { background: #111; border: 1px solid var(--dim); color: var(--text); padding: 5px; width: 140px; font-family: var(--f-main); font-size: 0.7rem; }
+        .theme-bar { display: flex; gap: 8px; }
+        .theme-dot { width: 15px; height: 15px; border-radius: 50%; cursor: pointer; border: 1px solid #333; }
+        .album-art { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; border: 1px solid var(--dim); filter: grayscale(50%); transition: 0.3s; }
+        .album-art:hover { filter: grayscale(0%); transform: scale(1.1); }
+
+        /* LIST */
+        /* NEW (Just expands to show all tasks) */
+        .list-container { 
+            flex-grow: 1; 
+            padding-right: 5px; 
+            height: auto; 
+            overflow: visible; /* Don't hide tasks, just show them all */
+        }
+        .task-item { 
+            display: flex; 
+            align-items: center; 
+            padding: 10px; 
+            margin-bottom: 6px; 
+            background: rgba(25,25,25,0.7); 
+            border: 1px solid transparent; 
+            border-radius: 4px; 
+            transition: 0.2s; 
+            flex-wrap: wrap; /* NEW: Allows buttons to drop to next line if no room */
+            gap: 5px; 
+        }
+        .task-item.done { opacity: 0.3; text-decoration: line-through; border-color: var(--dim); }
+        .task-input { background: 0 0; border: 0; color: var(--text); font-family: inherit; flex-grow: 1; font-size: 1rem; outline: 0; padding: 0 10px; }
+        .tag { font-size: 0.65rem; background: var(--dim); color: #000; padding: 2px 6px; font-weight: 800; border-radius: 2px; }
+
+        /* HUD & OVERLAYS */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); z-index: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .timer-q { font-size: 1.5rem; color: var(--alert); font-family: var(--f-main); margin-bottom: 20px; }
+        .hud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 95%; max-width: 400px; }
+        .hud-btn { padding: 20px; background: #000; border: 2px solid var(--text); color: var(--text); font-family: var(--f-hud); cursor: pointer; font-size: 1rem; }
+        .hud-btn:active { background: var(--text); color: #000; }
+        
+        .modal { background: #000; border: 1px solid var(--text); padding: 20px; width: 90%; max-width: 320px; text-align: center; box-shadow: 0 0 30px rgba(0,255,0,0.15); }
+        .inp-full { width: 100%; background: #000; border: 1px solid var(--dim); color: var(--text); padding: 12px; margin: 10px 0; text-align: center; font-family: var(--f-hud); font-size: 1.2rem; }
+        
+        .event-banner { background: linear-gradient(90deg, var(--alert), transparent); border-left: 4px solid var(--alert); padding: 10px; font-size: 0.85rem; color: #000; font-weight: 800; font-family: var(--f-hud); margin-bottom: 10px; }
+        .engage-btn { background: 0 0; border: 1px solid var(--alert); color: var(--alert); font-size: 0.7rem; padding: 5px 10px; cursor: pointer; font-family: var(--f-hud); border-radius: 4px; margin-left: 10px; }
+        
+        #confetti-canvas { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 1000; }
+    
+        @keyframes break-pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            60% { transform: scale(1.08); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .break-btn-active {
+            animation: break-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            box-shadow: 0 0 25px rgba(255,187,0,0.6);
+            text-shadow: 0 0 12px #fb0;
+            background: rgba(255,187,0,0.15) !important;
+            border-width: 2px !important;
+        }
+    </style>
+</head>
+<body class="theme-ghost">
+    <div id="battery-line"></div>
+    <div id="root"></div>
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- ========================================== -->
+    <!-- SURGICAL OFFLINE BACKEND EMULATOR INJECTION -->
+    <!-- ========================================== -->
+    <script>
+    (function() {
+        const LS = {
+            get: (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } },
+            set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} },
+            del: (k) => { try { localStorage.removeItem(k); } catch(e) {} }
+        };
+
+        const getLocalKey = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+
+        // --- ANDROID NATIVE BRIDGE INJECTION ---
+        window.ANDROID_MEDIA_STATE = { title: 'SYSTEM IDLE', artist: 'Native Media', active: false };
+        window.updateNativeMedia = (title, artist, active) => {
+            window.ANDROID_MEDIA_STATE = {
+                title: title && title !== 'null' ? title : 'SYSTEM IDLE',
+                artist: artist && artist !== 'null' ? artist : 'Unknown',
+                active: active === 'true'
+            };
+        };
+
+        // Offline Lofi Streams replacement for ADB Media Plugin
+        const STATIONS = [
+            { title: 'Lofi Girl Focus',      artist: 'ChilledCow',  url: 'https://play.streamafrica.net/lofiradio' },
+            { title: 'Synthwave / Retrowave', artist: 'The Midnight', url: 'https://streams.ilovemusic.de/iloveradio17.mp3' },
+            { title: 'Classical Masters',    artist: 'Mozart/Bach',  url: 'https://strm112.1.fm/classical_mobile_mp3' }
+        ];
+
+        window.audioPlayer = new Audio(STATIONS[0].url);
+        window.audioPlayer.loop = true;
+        let currentStationIdx = 0;
+        let isPlaying = false;
+
+        let zenBackendState = LS.get('jae_zen_state', {
+            mode: false, balance: 0, progress: 0, penalty: 0,
+            coin_deductions: 0, penalty_accum: 0, has_completed_task: false,
+            last_tick: Date.now(), last_finish_ts: 0, momentum: 0,
+            date: getLocalKey(new Date())
+        });
+
+        const getStats = (ds) => LS.get(`jae_stats_${ds}`, {
+            today_time: 0, output_time: 0, accuracy: 0, subject_breakdown: {},
+            total_coins: LS.get('jae_coins', 0), tasks_total: 0, tasks_completed: 0, questions_today: 0
+        });
+        const saveStats = (ds, st) => {
+            LS.set(`jae_stats_${ds}`, st);
+            if (st.total_coins !== undefined) LS.set('jae_coins', st.total_coins);
+        };
+
+        const mockApi = async (url, options) => {
+            const method = (options && options.method) || 'GET';
+            const body = (options && options.body) ? JSON.parse(options.body) : null;
+            const [path, query] = url.split('?');
+            const params = new URLSearchParams(query || '');
+            const dateStr = params.get('date') || getLocalKey(new Date());
+            const today = getLocalKey(new Date());
+
+            if (path === '/api/tasks') {
+                if (method === 'GET') return LS.get(`jae_tasks_${dateStr}`, null);
+                if (method === 'POST') {
+                    LS.set(`jae_tasks_${body.date}`, body.tasks);
+                    const st = getStats(body.date);
+                    st.tasks_total = body.tasks.length;
+                    st.tasks_completed = body.tasks.filter(t => t.done).length;
+                    saveStats(body.date, st);
+                    return { ok: true };
+                }
+            }
+
+            if (path === '/api/tasks/paused') {
+                if (method === 'GET') return LS.get('jae_paused', {});
+                if (method === 'POST') { LS.set('jae_paused', body); return { ok: true }; }
+            }
+
+            if (path === '/api/task/active') {
+                if (method === 'GET') return LS.get('jae_active', null);
+                if (method === 'POST') {
+                    const fStart = LS.get(`jae_first_start_${today}`, 0);
+                    if (!fStart) LS.set(`jae_first_start_${today}`, body.abs_start || Date.now());
+                    if (zenBackendState.mode) {
+                        const lastFin = zenBackendState.last_finish_ts || 0;
+                        zenBackendState.momentum = (lastFin > 0 && (Date.now() - lastFin) / 1000 < 300)
+                            ? (zenBackendState.momentum || 0) + 1 : 0;
+                        LS.set('jae_zen_state', zenBackendState);
+                    }
+                    LS.set('jae_active', body);
+                    return { ok: true };
+                }
+                if (method === 'DELETE') { LS.del('jae_active'); return { ok: true }; }
+            }
+
+            if (path === '/api/task/break') {
+                if (body && body.paused_tasks !== undefined) LS.set('jae_paused', body.paused_tasks);
+                LS.del('jae_active');
+                return { ok: true, status: 'ok' };
+            }
+
+            if (path === '/api/stats' && method === 'GET') {
+                const rawStats = getStats(dateStr);
+                const dTasks = LS.get(`jae_tasks_${dateStr}`, []);
+                const offlineDone = dTasks.filter(t => t.mode === 'offline' && t.done).length;
+                let baseCoins = (rawStats.total_coins || 0) + (offlineDone * 50);
+
+                if (dateStr === today) {
+                    const deductions = zenBackendState.coin_deductions || 0;
+                    const activeT = LS.get('jae_active', null);
+                    if (activeT && activeT.abs_start) {
+                        const liveSecs = Math.floor((Date.now() - activeT.abs_start) / 1000) + (activeT.elapsed || 0);
+                        rawStats.today_time += liveSecs;
+                        if (activeT.mode === 'focus') {
+                            baseCoins += liveSecs <= 3600 ? Math.floor(liveSecs / 60) : 60 + Math.floor((liveSecs - 3600) / 40);
+                        }
+                    }
+                    rawStats.total_coins = Math.max(0, baseCoins - deductions);
+                    const fStart = LS.get(`jae_first_start_${today}`, 0);
+                    if (fStart > 0) {
+                        const real_el = (Date.now() - fStart) / 1000;
+                        rawStats.grind_ratio = real_el > 0 ? Math.min(1, rawStats.today_time / real_el) : 0;
+                    }
+                    rawStats.lanterns = Math.floor((rawStats.today_time || 0) / 3600);
+                } else {
+                    rawStats.total_coins = baseCoins;
+                }
+                rawStats.zen_momentum = zenBackendState.momentum || 0;
+                return rawStats;
+            }
+
+            if (path === '/api/reset_day') {
+                LS.del(`jae_tasks_${today}`);
+                LS.del(`jae_stats_${today}`);
+                LS.del(`jae_first_start_${today}`);
+                LS.del('jae_active');
+                return { ok: true };
+            }
+
+            if (path === '/api/log_session') {
+                if (LS.get('jae_active', null) && zenBackendState.mode) {
+                    const catchupDt = (Date.now() - zenBackendState.last_tick) / 1000;
+                    if (catchupDt > 0) {
+                        zenBackendState.progress = (zenBackendState.progress || 0) + catchupDt;
+                        const cyc = 52 * 60;
+                        while (zenBackendState.progress >= cyc) { zenBackendState.progress -= cyc; zenBackendState.balance += (17 * 60); }
+                    }
+                }
+                zenBackendState.last_tick = Date.now();
+                zenBackendState.last_finish_ts = Date.now();
+                LS.set('jae_zen_state', zenBackendState);
+                LS.del('jae_active');
+
+                const stats = getStats(today);
+                stats.today_time += body.duration || 0;
+                if (body.type !== 'focus') stats.output_time = (stats.output_time || 0) + (body.duration || 0);
+
+                const firstStart = LS.get(`jae_first_start_${today}`, 0) || (Date.now() - (body.duration || 0) * 1000);
+                if (!LS.get(`jae_first_start_${today}`, 0)) LS.set(`jae_first_start_${today}`, firstStart);
+                const real_elapsed = (Date.now() - firstStart) / 1000;
+                stats.grind_ratio = real_elapsed > 0 ? Math.min(1, stats.today_time / real_elapsed) : 0;
+                stats.questions_today += (body.questions || 0);
+
+                const tag = body.tag || 'MISC';
+                if (!stats.subject_breakdown[tag]) stats.subject_breakdown[tag] = { time: 0, q: 0, c: 0, marks: 0, marks_total: 0, train_q: 0, train_c: 0 };
+                const sb = stats.subject_breakdown[tag];
+                sb.time += body.duration || 0;
+                if (body.type === 'training') {
+                    sb.train_q += body.questions || 0; sb.train_c += body.correct || 0;
+                    sb.q += body.questions || 0;       sb.c += body.correct || 0;
+                }
+                if (body.type === 'online_test' || body.type === 'focus' || body.type === 'training') {
+                    sb.marks += Number(body.marks_scored || 0);
+                    sb.marks_total += Number(body.marks_total || 0);
+                }
+                let totQ = 0, totC = 0;
+                Object.values(stats.subject_breakdown).forEach(s => { totQ += s.train_q; totC += s.train_c; });
+                stats.accuracy = totQ > 0 ? (totC / totQ) * 100 : 0;
+
+                let earned = 0;
+                if (body.type === 'focus') {
+                    earned = body.duration <= 3600 ? Math.floor(body.duration / 60) : 60 + Math.floor((body.duration - 3600) / 40);
+                } else {
+                    earned = Number(body.marks_scored || 0);
+                }
+                stats.total_coins = (stats.total_coins || 0) + earned;
+                saveStats(today, stats);
+                return { stats };
+            }
+
+            if (path === '/api/zen/tick') {
+                if (zenBackendState.date && zenBackendState.date !== today) {
+                    zenBackendState = { mode: false, balance: 0, progress: 0, penalty: 0, coin_deductions: 0, penalty_accum: 0, has_completed_task: false, last_tick: Date.now(), last_finish_ts: 0, momentum: 0, date: today };
+                }
+                zenBackendState.date = today;
+
+                const now_ts = Date.now();
+                let dt = (now_ts - (zenBackendState.last_tick || now_ts)) / 1000;
+                if (dt < 0) dt = 0;
+                zenBackendState.last_tick = now_ts;
+
+                if (body && body.mode === true) zenBackendState.mode = true;
+
+                const todaySt = getStats(today);
+                zenBackendState.has_completed_task = (todaySt.today_time || 0) > 0;
+                const effectiveStatus = LS.get('jae_active', null) ? 'focus' : ((body && body.status) || 'idle');
+
+                if (zenBackendState.mode && dt > 0) {
+                    if (effectiveStatus === 'focus') {
+                        zenBackendState.progress = (zenBackendState.progress || 0) + dt;
+                        const cyc = 52 * 60;
+                        while (zenBackendState.progress >= cyc) { zenBackendState.progress -= cyc; zenBackendState.balance += (17 * 60); }
+                    } else {
+                        if (dt <= 60) {
+                            let rem = dt;
+                            if (zenBackendState.balance > 0) {
+                                const taken = Math.min(zenBackendState.balance, rem);
+                                zenBackendState.balance -= taken; rem -= taken;
+                            }
+                            if (rem > 0 && zenBackendState.has_completed_task) {
+                                const dTasks = LS.get(`jae_tasks_${today}`, []);
+                                const offDone = dTasks.filter(t => t.mode === 'offline' && t.done).length;
+                                const gross = (todaySt.total_coins || 0) + (offDone * 50);
+                                const net = gross - (zenBackendState.coin_deductions || 0);
+                                if (net > 0) {
+                                    zenBackendState.penalty_accum = (zenBackendState.penalty_accum || 0) + rem;
+                                    let pens = Math.floor(zenBackendState.penalty_accum / 30);
+                                    if (pens > 0) {
+                                        pens = Math.min(pens, net);
+                                        zenBackendState.penalty_accum %= 30;
+                                        zenBackendState.penalty = (zenBackendState.penalty || 0) + pens;
+                                        zenBackendState.coin_deductions = (zenBackendState.coin_deductions || 0) + pens;
+                                    }
+                                } else { zenBackendState.penalty_accum = 0; }
+                            }
+                        }
+                    }
+                }
+                LS.set('jae_zen_state', zenBackendState);
+                return { ...zenBackendState };
+            }
+
+            if (path === '/api/system/drain') {
+                const currStats = getStats(today);
+                const target = 8 * 3600;
+                const activeDrain = LS.get('jae_active', null);
+                const elapsedNow = (activeDrain && activeDrain.abs_start) ? Math.floor((Date.now() - activeDrain.abs_start) / 1000) : 0;
+                const totalElapsed = (currStats.today_time || 0) + elapsedNow;
+                const rem = Math.max(0, target - totalElapsed);
+                return {
+                    status: rem > 0 ? 'DISCHARGING' : 'FULL',
+                    level: Math.floor((totalElapsed / target) * 100),
+                    rem: rem <= 0 ? 'TARGET_REACHED' : rem
+                };
+            }
+
+            if (path === '/api/media/info') {
+                // [NATIVE BRIDGE] Check if running inside the compiled Android APK
+                if (window.AndroidBridge) return window.ANDROID_MEDIA_STATE;
+
+                return { title: isPlaying ? STATIONS[currentStationIdx].title : 'SYSTEM IDLE', artist: STATIONS[currentStationIdx].artist, active: isPlaying };
+            }
+
+            if (path === '/api/media/control') {
+                // [NATIVE BRIDGE] Check if running inside the compiled Android APK
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.sendMediaCommand(body.action);
+                    return { ok: true };
+                }
+
+                if (body.action === 'playpause') {
+                    if (isPlaying) { window.audioPlayer.pause(); isPlaying = false; }
+                    else { window.audioPlayer.play().then(() => isPlaying = true).catch(() => {}); }
+                } else if (body.action === 'next' || body.action === 'prev') {
+                    currentStationIdx = body.action === 'next'
+                        ? (currentStationIdx + 1) % STATIONS.length
+                        : (currentStationIdx - 1 + STATIONS.length) % STATIONS.length;
+                    window.audioPlayer.src = STATIONS[currentStationIdx].url;
+                    if (isPlaying) window.audioPlayer.play().catch(() => {});
+                }
+                return { ok: true };
+            }
+
+            if (path === '/api/media/rvx_search') {
+                const q = (body && body.query) ? body.query.toLowerCase() : '';
+                if (q.includes('lofi') || q.includes('girl') || q.includes('study')) currentStationIdx = 0;
+                else if (q.includes('synth') || q.includes('retro') || q.includes('wave')) currentStationIdx = 1;
+                else if (q.includes('class') || q.includes('piano') || q.includes('bach')) currentStationIdx = 2;
+                else currentStationIdx = (currentStationIdx + 1) % STATIONS.length;
+                window.audioPlayer.src = STATIONS[currentStationIdx].url;
+                window.audioPlayer.play().then(() => isPlaying = true).catch(() => {});
+                return { ok: true };
+            }
+
+            if (path === '/api/adb/config') return { status: 'ok' };
+
+            return {};
+        };
+
+        const _realFetch = window.fetch;
+        window.fetch = async (url, options = {}) => {
+            if (typeof url === 'string') {
+                const idx = url.indexOf('/api/');
+                if (idx !== -1) {
+                    const apiPath = url.slice(idx);
+                    try {
+                        const data = await mockApi(apiPath, options);
+                        return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+                    } catch (e) {
+                        console.error('MOCK API ERROR:', e);
+                        return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+                    }
+                }
+            }
+            return _realFetch(url, options);
+        };
+
+        console.log('[MALACHITE] Offline backend active. window.fetch intercepted.');
+    })();
+    </script>
+
+    <script type="text/babel">
+        // ==========================================
+        // HYBRID 2026 SCHEDULE (LEGEND + PYQ)
+        // ==========================================
+        const SCHEDULE = {
+            // --- FEBRUARY 2026 (NEW PLAN) ---
+            '2026-02-01': {event: 'TEST DAY: Star Score-II', type: 'TEST', target: 4},
+            '2026-02-02': {event: 'PREP: Eng/PE + OC/IOC', type: 'PREP', target: 5},
+            '2026-02-03': {event: 'PREP: Eng/PE + OC/IOC', type: 'PREP', target: 5},
+            '2026-02-04': {event: 'TEST DAY: Star Score-II', type: 'TEST', target: 4},
+            '2026-02-05': {event: 'PREP: Eng/PE + OC/IOC', type: 'PREP', target: 5},
+            '2026-02-06': {event: 'PREP: Eng/PE + OC/IOC', type: 'PREP', target: 5},
+            '2026-02-07': {event: 'TEST DAY: Star Score-II', type: 'TEST', target: 4},
+            '2026-02-08': {event: 'SELF STUDY: Physics Focus', type: 'PREP', target: 5}, 
+            '2026-02-09': {event: 'PREP: Physics/PE', type: 'PREP', target: 5},
+            '2026-02-10': {event: 'TEST DAY: Star Score-II', type: 'TEST', target: 4},
+            '2026-02-11': {event: 'PREP: Physics/PE', type: 'PREP', target: 5},
+            '2026-02-12': {event: 'TEST DAY: Star Score-II', type: 'TEST', target: 4},
+            '2026-02-13': {event: 'PREP: Physics/PE', type: 'PREP', target: 5},
+            '2026-02-14': {event: 'PREP: Physics/PE', type: 'PREP', target: 5},
+            '2026-02-15': {event: 'BOARD PREP: PE (IOC Rev)', type: 'BOARD_PREP', target: 3},
+            '2026-02-16': {event: 'BOARD PREP: PE (IOC Rev)', type: 'BOARD_PREP', target: 3},
+            '2026-02-17': {event: 'BOARD PREP: PE (IOC Rev)', type: 'BOARD_PREP', target: 3},
+            '2026-02-18': {event: 'CBSE BOARD EXAM: PE', type: 'BOARD_EXAM', target: 0},
+            '2026-02-19': {event: 'BOARD PREP: Physics', type: 'BOARD_PREP', target: 3},
+            '2026-02-20': {event: 'CBSE BOARD EXAM: Physics', type: 'BOARD_EXAM', target: 0},
+            '2026-02-21': {event: 'SELF STUDY: Chemistry Focus', type: 'PREP', target: 5},
+            '2026-02-22': {event: 'HEAVY TEST: Adv (2 Paper)', type: 'HEAVY', target: 0.5},
+            '2026-02-23': {event: 'PREP: Chemistry (OC+PC)', type: 'PREP', target: 5},
+            '2026-02-24': {event: 'PREP: Chemistry (OC+PC)', type: 'PREP', target: 5},
+            '2026-02-25': {event: 'BOARD PREP: Chem', type: 'BOARD_PREP', target: 3},
+            '2026-02-26': {event: 'BOARD PREP: Chem', type: 'BOARD_PREP', target: 3},
+            '2026-02-27': {event: 'BOARD PREP: Chem', type: 'BOARD_PREP', target: 3},
+            '2026-02-28': {event: 'CBSE BOARD EXAM: Chemistry', type: 'BOARD_EXAM', target: 0},
+
+            // --- MARCH 2026 (NEW PLAN) ---
+            '2026-03-01': {event: 'SELF STUDY: Math Focus', type: 'PREP', target: 5},
+            '2026-03-02': {event: 'HEAVY TEST: Adv (2 Paper)', type: 'HEAVY', target: 0.5},
+            '2026-03-03': {event: 'PREP: Math', type: 'PREP', target: 5},
+            '2026-03-04': {event: 'HOLI HOLIDAY (Clear Backlog)', type: 'GRIND', target: 10},
+            '2026-03-05': {event: 'PREP: Math', type: 'PREP', target: 5},
+            '2026-03-06': {event: 'BOARD PREP: Math', type: 'BOARD_PREP', target: 3},
+            '2026-03-07': {event: 'BOARD PREP: Math', type: 'BOARD_PREP', target: 3},
+            '2026-03-08': {event: 'BOARD PREP: Math', type: 'BOARD_PREP', target: 3},
+            '2026-03-09': {event: 'CBSE BOARD EXAM: Maths', type: 'BOARD_EXAM', target: 0},
+            '2026-03-10': {event: 'BOARD PREP: English', type: 'BOARD_PREP', target: 3},
+            '2026-03-11': {event: 'BOARD PREP: English', type: 'BOARD_PREP', target: 3},
+            '2026-03-12': {event: 'CBSE BOARD EXAM: English', type: 'BOARD_EXAM', target: 0},
+            '2026-03-13': {event: 'GRIND DAY: Physics/Math', type: 'GRIND', target: 10},
+            '2026-03-14': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-03-15': {event: 'HEAVY TEST: Adv (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-16': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-03-17': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-03-18': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-03-19': {event: 'HEAVY TEST: Adv (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-20': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-03-21': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-03-22': {event: 'HEAVY TEST: Main + Adv', type: 'HEAVY', target: 0.5},
+            '2026-03-23': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-03-24': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-03-25': {event: 'HEAVY TEST: Main (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-26': {event: 'HEAVY TEST: Main + Adv', type: 'HEAVY', target: 0.5},
+            '2026-03-27': {event: 'HEAVY TEST: Main (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-28': {event: 'HEAVY TEST: Main (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-29': {event: 'HEAVY TEST: Main + Adv', type: 'HEAVY', target: 0.5},
+            '2026-03-30': {event: 'HEAVY TEST: Main (2)', type: 'HEAVY', target: 0.5},
+            '2026-03-31': {event: 'HEAVY TEST: Main (2)', type: 'HEAVY', target: 0.5},
+
+            // --- APRIL 1-16 (NEW PLAN) ---
+            '2026-04-01': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-04-02': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-03': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-04': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-05': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-06': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-07': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-08': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-09': {event: 'TEST DAY: Adv (1 Paper)', type: 'TEST', target: 4},
+            '2026-04-10': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-04-11': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-04-12': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-04-13': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-04-14': {event: 'GRIND DAY', type: 'GRIND', target: 10},
+            '2026-04-15': {event: 'HEAVY DAY: Class + Test', type: 'HEAVY', target: 0.5},
+            '2026-04-16': {event: 'FINAL REVISION (Schedule Shift)', type: 'GRIND', target: 10},
+
+            // --- APRIL 17 - MAY 17 (OLD PLAN: PYQ MODE) ---
+            '2026-04-17': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2022]', type: 'TEST', target: 4},
+            '2026-04-20': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2020]', type: 'TEST', target: 4},
+            '2026-04-22': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2022]', type: 'TEST', target: 4},
+            '2026-04-24': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2020]', type: 'TEST', target: 4},
+            '2026-04-27': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2025]', type: 'TEST', target: 4},
+            '2026-04-29': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2023]', type: 'TEST', target: 4},
+            '2026-05-01': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2025]', type: 'TEST', target: 4},
+            '2026-05-04': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2023]', type: 'TEST', target: 4},
+            '2026-05-06': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2025]', type: 'TEST', target: 4},
+            '2026-05-08': {event: 'CLASS + INT TEST: JEE Adv (2 Paper) [PYQ 2023]', type: 'TEST', target: 4},
+            '2026-05-17': {event: '🎯 JEE ADVANCED 2026 EXAMINATION DAY 🎯', type: 'FINAL', target: 12}
+        };
+
+        // HELPER: Forces date to stay in Local Time (Fixes the UTC/Timezone bug)
+        const getLocalKey = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+        
+                const generateDailyTasks = (dateObj) => {
+            const dateStr = getLocalKey(dateObj);
+            const dayOfWeek = dateObj.getDay(); 
+            // ISO Week logic to perfectly slide the Phy/PC rotation every week
+            const weekNum = Math.floor(dateObj.getTime() / (86400000 * 7));
+            const isPhyMonWed = (weekNum % 2 === 0);
+
+            const tasks = [];
+            const add = (txt, tag, mode, problems) => {
+                const t = { id: Math.random(), text: txt, tag, mode, done: false };
+                if (problems) t.problems = problems;
+                tasks.push(t);
+            };
+            const item = SCHEDULE[dateStr];
+
+            // Preserving the PYQ Last Month Phase
+            if (!item) {
+                add('PYQs - Training','JEEADV','training');
+                add('PYQs - Online Test','JEEADV','online_test');
+                add('PYQs - Offline','JEEADV','offline');
+                add('PYQs - Focus','JEEADV','focus');
+                return tasks;
+            }
+
+            // Preserving Existing Event Priorities
+            if (item.type === 'BOARD_EXAM') { add(`CBSE EXAM: ${item.event}`, 'EXAM', 'offline'); return tasks; }
+            if (item.type === 'HEAVY') { add(`EVENT: ${item.event}`, 'TEST', 'offline'); add('Analysis & Mistake Audit', 'AUDIT', 'focus'); return tasks; }
+            if (item.type === 'TEST' || item.type === 'FINAL') {
+                add(`${item.event} (Attempt)`, 'TEST', 'offline');
+                add('Thorough Analysis', 'AUDIT', 'focus');
+                return tasks;
+            }
+            if (item.type === 'BOARD_PREP') {
+                add(`Board Prep: ${item.event.split(':')[1].trim()}`, 'BOARD', 'focus');
+                return tasks;
+            }
+
+            // --- THE JUGGERNAUT PROTOCOL (Auto-Generator) ---
+            const isInput = (dayOfWeek >= 1 && dayOfWeek <= 3); 
+            const phaseLabel = isInput ? 'GR' : 'GQB';
+
+            // The Block 2 Sliding Toggle
+            let currentB2 = 'Phy';
+            if (dayOfWeek === 1 || dayOfWeek === 4) currentB2 = isPhyMonWed ? 'Phy' : 'PC';
+            else if (dayOfWeek === 2 || dayOfWeek === 5) currentB2 = isPhyMonWed ? 'PC' : 'Phy';
+            else if (dayOfWeek === 3 || dayOfWeek === 6) currentB2 = isPhyMonWed ? 'Phy' : 'PC';
+            else currentB2 = isPhyMonWed ? 'PC' : 'Phy';
+
+            const b2Phase = currentB2 === 'Phy' 
+                ? (isInput ? 'GR' : 'GQB (Evens)') 
+                : (isInput ? 'NK (Odds) L1/L2A' : 'NK (Odds) L2B/Sub/Cmp');
+
+            // Generating Micro-Tasks
+            const addBlock = (blockStr, tag, phase, m, n, s, c) => {
+                add(`${blockStr} - ${phase} - M:${m}`, tag, 'online_test', m);
+                add(`${blockStr} - ${phase} - N:${n}`, tag, 'online_test', n);
+                add(`${blockStr} - ${phase} - S:${s}`, tag, 'online_test', s);
+                add(`${blockStr} - ${phase} - C:${c}`, tag, 'online_test', c);
+            };
+
+            // Implementing the exact whiteboard ratios
+            const dayNum = dateObj.getDate();
+            const mathBook = dayNum % 3 === 0 ? 'Yellow (Alg)' : dayNum % 3 === 1 ? 'SamBa (Calc)' : 'Pink (Coord)';
+            addBlock('B1: Maths', 'MATH', mathBook, 9, 14, 13, 9);
+            addBlock(`B2: ${currentB2}`, currentB2.toUpperCase(), b2Phase, 14, 12, 10, 9);
+            addBlock('B3: OC', 'OC', 'SKM', 14, 12, 10, 9);
+            addBlock('B4: IOC', 'IOC', phaseLabel, 9, 8, 7, 6);
+            
+            // The Autopsy
+            add('B5: Autopsy (CIRCQs)', 'AUDIT', 'focus');
+
+            return tasks;
+        };
+
+        // ==========================================
+        // SYSTEM HOOKS (HIGH PRECISION DIRECT FEED)
+        // ==========================================
+        const useDrainTimer = () => {
+            const [display, setDisplay] = React.useState(null);
+            const [status, setStatus] = React.useState('DISCHARGING');
+            const [level, setLevel] = React.useState(0);
+            const [alert, setAlert] = React.useState(false);
+            const [targetReached, setTargetReached] = React.useState(false);
+
+            const engine = React.useRef({
+                virtualSecs: null, 
+                targetSecs: null,  
+                lastFrame: performance.now(),
+            });
+
+            React.useEffect(() => {
+                const poller = setInterval(() => {
+                    fetch('/api/system/drain').then(r=>r.json()).then(d => {
+                        setStatus(d.status);
+                        setLevel(d.level);
+                        
+                        if (d.rem === 'TARGET_REACHED') {
+                            setTargetReached(true);
+                            engine.current.targetSecs = null;
+                            engine.current.virtualSecs = null; // Stop timer
+                            setDisplay(null); // Clear old display
+                        } else if (d.status === 'DISCHARGING' && typeof d.rem === 'number' && d.rem > 0) {
+                            setTargetReached(false);
+                            const newTarget = d.rem; 
+                            
+                            engine.current.targetSecs = newTarget;
+                            if (engine.current.virtualSecs === null) {
+                                engine.current.virtualSecs = newTarget; // Initial snap
+                            }
+                        } else {
+                            setTargetReached(false);
+                            engine.current.targetSecs = null;
+                        }
+                    }).catch(()=>{ 
+                        engine.current.targetSecs = null;
+                        setTargetReached(false); 
+                    });
+                }, 1000); 
+
+                const loop = () => {
+                    const now = performance.now();
+                    const dt = (now - engine.current.lastFrame) / 1000;
+                    engine.current.lastFrame = now;
+                    const s = engine.current;
+
+                    if (s.virtualSecs !== null) {
+                        s.virtualSecs -= dt;
+
+                        if (s.targetSecs !== null) {
+                            const diff = s.targetSecs - s.virtualSecs;
+                            s.virtualSecs += diff * 0.1 * dt;
+                        }
+
+                        const total = Math.max(0, s.virtualSecs);
+                        const h = Math.floor(total/3600);
+                        const m = Math.floor((total%3600)/60);
+                        const sec = Math.floor(total % 60);
+                        const pad = n => n.toString().padStart(2,'0');
+
+                        setDisplay((h>0 ? h+":" : "") + pad(m) + ":" + pad(sec));
+                        setAlert(h===0 && m < 30);
+                    }
+                    requestAnimationFrame(loop);
+                };
+                
+                const raf = requestAnimationFrame(loop);
+                return () => { clearInterval(poller); cancelAnimationFrame(raf); };
+            }, []);
+
+            return { display, alert, status, level, targetReached };
+        };
+
+        // ==========================================
+        // CORE UI COMPONENTS
+        // ==========================================
+
+        const App = () => {
+            const [zen, setZen] = React.useState({mode: false, balance: 0, penalty: 0, penalty_accum: 0});
+            const [date, setDate] = React.useState(new Date());
+            
+            // DATE REF TO DEFEAT STALE CLOSURES
+            const dateRef = React.useRef(date);
+            React.useEffect(() => { dateRef.current = date; }, [date]);
+
+            // Declared early so the effects below capture the correct value in their dep arrays.
+            const [activeTask, setActiveTask] = React.useState(null);
+            const [pausedTasks, setPausedTasks] = React.useState({});
+
+            // ZEN HEARTBEAT (5s Sync)
+            React.useEffect(() => {
+                const tick = () => {
+                    const status = activeTask ? 'focus' : 'idle';
+                    fetch('/api/zen/tick', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ mode: zen.mode, status: status })
+                    })
+                    .then(r => r.json())
+                    .then(d => {
+                        setZen(d);
+                        
+                        })
+                    .catch(e => {});
+                };
+                const iv = setInterval(tick, 5000);
+                return () => clearInterval(iv);
+            }, [activeTask, zen.mode, date]);
+
+            
+            // DEDICATED REAL-TIME STATS ENGINE (BULLETPROOF)
+            React.useEffect(() => {
+                const todayStr = getLocalKey(new Date());
+                // If viewing history, DO NOT setup the polling interval at all.
+                if (getLocalKey(date) !== todayStr) return;
+                
+                const iv = setInterval(() => {
+                    fetch(`/api/stats?date=${todayStr}`).then(r=>r.json()).then(data => {
+                        // Absolute final safety check before mutating screen
+                        if (getLocalKey(dateRef.current) === todayStr) setStats(data);
+                    });
+                }, 5000);
+                return () => clearInterval(iv);
+            }, [date]);
+
+            // ZEN 1-SECOND VISUAL TICKER (Smooth Countdown)
+            React.useEffect(() => {
+                const iv = setInterval(() => {
+                    setZen(prev => {
+                        if(!prev.mode || activeTask) return prev;
+                        let newZ = {...prev};
+                        if (newZ.balance > 0) {
+                            // Always drain break balance when idle — no has_completed_task gate.
+                            newZ.balance -= 1;
+                        } else if (newZ.has_completed_task) {
+                            // Coin penalty only applies after at least one task is done today.
+                            newZ.penalty_accum = (newZ.penalty_accum || 0) + 1;
+                            if (newZ.penalty_accum >= 30) {
+                                newZ.penalty_accum = 0;
+                                newZ.penalty += 1;
+                            }
+                        }
+                        return newZ;
+                    });
+                }, 1000);
+                return () => clearInterval(iv);
+            }, [activeTask]);
+
+            const drain = useDrainTimer();
+            const [tasks, setTasks] = React.useState([]);
+
+            React.useEffect(() => {
+                fetch('/api/task/active').then(r=>r.json()).then(d => { 
+                    if(d && d.id) {
+                        // Guard: if this task is already in paused_tasks, it means a previous
+                        // break attempt left active_task dangling (app closed mid-break).
+                        fetch('/api/tasks/paused').then(r=>r.json()).then(paused => {
+                            if(paused && paused[d.id]) {
+                                fetch('/api/task/active', {method:'DELETE'});
+                                setPausedTasks(paused);
+                            } else {
+                                setActiveTask(d);
+                                if(paused) setPausedTasks(paused);
+                            }
+                        }).catch(()=>{ setActiveTask(d); });
+                    } else {
+                        fetch('/api/tasks/paused').then(r=>r.json()).then(d => { if(d) setPausedTasks(d); }).catch(()=>{});
+                    }
+                }).catch(()=>{});
+            }, []); 
+            const [stats, setStats] = React.useState({today_time:0, accuracy:0, subject_breakdown:{}});
+            
+            const [summaryOpen, setSummaryOpen] = React.useState(false);
+            const [configTask, setConfigTask] = React.useState(null);
+            const [probCount, setProbCount] = React.useState(15);
+
+            const [deckOpen, setDeckOpen] = React.useState(false);
+            const [media, setMedia] = React.useState({title:'SYSTEM IDLE', artist:'JPX Media'});
+            const [artUrl, setArtUrl] = React.useState(null);
+            const prevTrackRef = React.useRef("");
+
+            const vibrate = (ms=40) => { if(navigator.vibrate) navigator.vibrate(ms); };
+
+            React.useEffect(() => {
+                if(navigator.getBattery) navigator.getBattery().then(b => {
+                    const update = () => {
+                        const el = document.getElementById('battery-line');
+                        if(el) el.style.width = (b.level*100)+'%';
+                    }
+                    update(); b.onlevelchange = update;
+                });
+                
+                const savedTheme = localStorage.getItem('jae_theme') || 'ghost';
+                document.body.className = 'theme-'+savedTheme;
+
+                setInterval(() => {
+                    const root = document.getElementById('root');
+                    root.style.transform = `translate(${Math.random()*2-1}px, ${Math.random()*2-1}px)`;
+                }, 60000);
+
+                window.onkeydown = (e) => {
+                    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+                    if(e.code === 'Space') { e.preventDefault(); setDeckOpen(o => !o); vibrate(20); }
+                    if(e.code === 'ArrowLeft') changeDate(-1);
+                    if(e.code === 'ArrowRight') changeDate(1);
+                    if(e.key.toLowerCase() === 'a' && !e.ctrlKey) addTask();
+                };
+
+                const poll = setInterval(() => {
+                    fetch('/api/media/info').then(r=>r.json()).then(d => {
+                        setMedia(d);
+                        if (!d.active && d.title === 'SYSTEM IDLE') {
+                            setArtUrl(null);
+                        }
+                    }).catch(()=>{});
+                }, 3000);
+                return () => clearInterval(poll);
+            }, [date]);
+
+            React.useEffect(() => {
+                let isMounted = true;
+                const dKey = getLocalKey(date);
+                fetch(`/api/tasks?date=${dKey}`).then(r=>r.json()).then(res => {
+                    if (isMounted) setTasks(res || generateDailyTasks(date));
+                });
+                fetch(`/api/stats?date=${dKey}`).then(r=>r.json()).then(data => {
+                    if (isMounted) setStats(data);
+                });
+                return () => { isMounted = false; };
+            }, [date]);
+
+            const changeDate = (n) => { vibrate(20); const d = new Date(date); d.setDate(d.getDate()+n); setDate(d); };
+            const saveTasks = (nt) => { 
+                setTasks(nt); 
+                const targetDate = getLocalKey(dateRef.current);
+                fetch('/api/tasks', {
+                    method:'POST', 
+                    headers:{'Content-Type':'application/json'}, 
+                    body:JSON.stringify({date:targetDate, tasks:nt})
+                }).then(() => {
+                    // Refresh stats to capture new offline coins
+                    fetch(`/api/stats?date=${targetDate}`).then(r=>r.json()).then(data => {
+                        if (getLocalKey(dateRef.current) === targetDate) setStats(data);
+                    });
+                }); 
+            };
+            
+            const addTask = () => { vibrate(30); const t = {id:Math.random(), text:'New Directive', tag:'MISC', mode:'focus', done:false}; saveTasks([...tasks, t]); };
+            const deleteTask = (id) => { if(confirm('DELETE TASK?')) saveTasks(tasks.filter(t=>t.id!==id)); };
+            const toggleTask = (id) => { vibrate(20); saveTasks(tasks.map(t=>t.id===id?{...t, done:!t.done}:t)); };
+            const moveTask = (id, dir) => {
+                const idx = tasks.findIndex(t => t.id === id);
+                if ((dir === -1 && idx === 0) || (dir === 1 && idx === tasks.length - 1)) return;
+                const newTasks = [...tasks];
+                [newTasks[idx], newTasks[idx + dir]] = [newTasks[idx + dir], newTasks[idx]];
+                saveTasks(newTasks);
+                vibrate(15);
+            };
+            
+            const startActiveTask = (taskData) => {
+                const payload = {...taskData, abs_start: Date.now(), elapsed: taskData.elapsed || 0};
+                setActiveTask(payload);
+                fetch('/api/task/active', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+            };
+
+            const initiate = (t) => {
+                vibrate(50);
+                if (!zen.mode) {
+                    // Auto-prompt to activate Zen Mode
+                    if(confirm(`🔥 FIRST TASK DETECTED: ACTIVATE ZEN MODE FOR THE DAY?
+
+- 52/17 Rule Enforced.
+- Coins lost for wasting time.
+- CANNOT BE TURNED OFF TODAY.`)) {
+                        setZen(prev => ({...prev, mode: true}));
+                    }
+                }
+                const match = (t.text || "").match(/[A-Z]:(\d+)\s*$/);
+                if ((t.mode === 'training' || t.mode === 'online_test') && match) {
+                    // [PATCH] Bypass config and auto-inject problem count
+                    startActiveTask({...t, problems: parseInt(match[1], 10)});
+                } else if(t.mode === 'training' || t.mode === 'online_test') {
+                    setConfigTask(t);
+                } else {
+                    startActiveTask(t);
+                }
+            };
+
+            const ctrlMedia = (a) => { vibrate(20); fetch('/api/media/control', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:a})}); };
+            const changeTheme = (t) => { document.body.className = 'theme-'+t; localStorage.setItem('jae_theme', t); vibrate(30); };
+            const takeBreak = (currentTime, currentQ, currentCorrect, currentScore) => {
+                const newPausedState = {
+                    ...pausedTasks,
+                    [activeTask.id]: { 
+                        ...activeTask, 
+                        elapsed: currentTime, 
+                        lastQ: currentQ, 
+                        lastCorrect: currentCorrect,
+                        lastScore: currentScore 
+                    }
+                };
+                // Single atomic request: saves paused task AND clears active_task together.
+                fetch('/api/task/break', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({paused_tasks: newPausedState})
+                });
+                setPausedTasks(newPausedState);
+                setActiveTask(null);
+                vibrate(30);
+            };
+            const resumeTask = (id) => {
+                const task = pausedTasks[id];
+                startActiveTask(task);
+                const newPaused = {...pausedTasks};
+                delete newPaused[id];
+                setPausedTasks(newPaused);
+                fetch('/api/tasks/paused', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newPaused)});
+                vibrate(30);
+            };
+
+            const scheduleItem = SCHEDULE[getLocalKey(date)];
+            // TROPHY LOGIC
+            const targetHours = scheduleItem ? scheduleItem.target : 5; // Default target for off-days
+            const targetMet = targetHours > 0 && (stats.today_time / 3600) >= targetHours;
+            const displayCoins = (stats.total_coins || 0) + (targetMet ? 500 : 0);
+
+            return (
+                <div onDoubleClick={() => { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }}>
+                    
+                    {/* COMMAND HEADER (RESTRUCTURED FOR ALIGNMENT) */}
+                    <div className="header" style={{alignItems: 'flex-start'}}>
+                        {/* LEFT PANE */}
+                        <div style={{flexGrow: 1}}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '5px'}}>
+                                <h1 style={{margin: 0, lineHeight: 1}}>
+                                    JAEXO MALACHITE{targetMet && ' 🏆'}
+                                </h1>
+                                <img 
+                                    src="https://iili.io/qKNVaF1.png" 
+                                    style={{height: '1.8rem', width: 'auto', display: 'block'}} 
+                                />
+                            </div>
+                            <div className="stat-ticker">
+                                <span>TIME: <span className="stat-val">{(stats.today_time/3600).toFixed(2)}h</span> <span style={{fontSize:'0.7em', color:'#555'}}>/ {targetHours}h</span> {(stats.lanterns || 0) > 0 && <span style={{marginLeft: 5, fontSize: '0.9rem'}}>{'🏮'.repeat(stats.lanterns)}</span>}</span>&nbsp;
+                                <span>ACC: <span className="stat-val">{stats.accuracy.toFixed(0)}%</span></span>&nbsp;
+                                <span>🥇: <span className="stat-val" style={{color:'#fb0'}}>{displayCoins}</span></span>&nbsp;
+                                <span className="stat-val" style={{cursor:'pointer', marginLeft: 10}} onClick={()=>setDeckOpen(!deckOpen)}>[COMMAND DECK]</span>
+                            </div>
+                        </div>
+                        {/* RIGHT PANE (DATE & POWER) */}
+                        <div style={{textAlign:'right', marginLeft: '20px', minWidth: 'fit-content'}}>
+                             {/* POWER INDICATOR MOVED HERE */}
+                            <div style={{marginBottom: '5px'}}>
+                                {drain.status === 'CHARGING' || drain.status === 'FULL' ? (
+                                    <div style={{fontFamily:'var(--f-hud)', fontWeight:'bold', color:'#0f0', letterSpacing:'1px', fontSize:'0.9rem'}}>
+                                        <span className="material-symbols-outlined" style={{fontSize:'1rem', verticalAlign:'middle'}}>bolt</span>
+                                        {drain.level}%
+                                    </div>
+                                ) : drain.targetReached ? (
+                                    <div style={{fontFamily:'var(--f-hud)', fontWeight:'bold', color: 'var(--alert)', letterSpacing:'1px', fontSize:'0.9rem', display: 'flex', alignItems: 'center'}}>
+                                        <span className="material-symbols-outlined" style={{fontSize:'1.1rem', verticalAlign:'middle', marginRight: '4px'}}>battery_alert</span>
+                                        LOW POWER
+                                    </div>
+                                ) : (
+                                    <div style={{fontFamily:'var(--f-hud)', fontWeight:'bold', color: drain.alert ? 'var(--alert)' : 'var(--dim)', letterSpacing:'1px'}}>
+                                        REM: {drain.display || 'SYNC...'}
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{color:'var(--accent)', fontFamily:'var(--f-hud)', fontSize: '0.9rem'}}>{date.toDateString().toUpperCase()}</div>
+                            <div style={{fontSize:'0.7rem', color:'var(--dim)', cursor:'pointer'}} onClick={()=>setDate(new Date())}>[RETURN TO TODAY]</div>
+                                                        <div style={{marginTop: '5px', display:'flex', justifyContent:'flex-end', alignItems:'center', gap:'10px'}}>
+                                {getLocalKey(date) === getLocalKey(new Date()) && (
+                                    <>
+                                        {zen.mode && (
+                                            <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end'}}>
+                                                {zen.penalty > 0 && <span style={{color:'var(--alert)', fontWeight:'bold', fontFamily:'var(--f-hud)', fontSize:'0.8rem'}}>🔻-{zen.penalty} COINS</span>}
+                                                {zen.balance > 0 ? (
+                                                    <span style={{color: '#fb0', fontFamily:'var(--f-hud)', fontWeight:'bold', fontSize:'0.9rem'}}>
+                                                        ☕ {Math.floor(zen.balance/60)}m {Math.floor(zen.balance%60)}s
+                                                    </span>
+                                                ) : (
+                                                    !activeTask ? (
+                                                        zen.has_completed_task ? (
+                                                            <span className="paused-indicator" style={{color: 'var(--alert)', fontFamily:'var(--f-hud)', fontWeight:'bold', fontSize:'0.8rem'}}>
+                                                                ⚠️ -1 COIN IN {Math.max(0, 30 - (zen.penalty_accum||0)).toFixed(0)}s
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{color: 'var(--dim)', fontFamily:'var(--f-hud)', fontWeight:'bold', fontSize:'0.7rem'}}>
+                                                                AWAITING FIRST TASK
+                                                            </span>
+                                                        )
+                                                    ) : null
+                                                )}
+                                            </div>
+                                        )}
+                                        {zen.mode && (zen.momentum||0) > 0 && (
+                                            <span style={{fontSize:'1.1rem', marginRight:'8px', textShadow:'0 0 10px #0af', animation:'pulse 2s infinite'}}>
+                                                {'💠'.repeat(zen.momentum)}
+                                            </span>
+                                        )}
+                                        <div 
+                                            onClick={() => {
+                                                if(!zen.mode) {
+                                                    if(confirm(`🔥 ACTIVATE ZEN MODE FOR TODAY?
+
+- 52/17 Rule Enforced.
+- Coins lost for wasting time.
+- CANNOT BE TURNED OFF TODAY.`)) {
+                                                        setZen(prev => ({...prev, mode: true}));
+                                                    }
+                                                }
+                                            }}
+                                            style={{
+                                                cursor: zen.mode ? 'default' : 'pointer',
+                                                filter: zen.mode ? 'none' : 'grayscale(100%) opacity(0.6)',
+                                                fontSize: '1.5rem',
+                                                transition: '0.3s',
+                                                textShadow: zen.mode ? `0 0 15px #f00, 0 0 ${10 + (zen.momentum||0)*8}px #0af` : 'none',
+                                                transform: zen.mode ? 'scale(1.1)' : 'scale(1)'
+                                            }}
+                                            title={zen.mode ? "ZEN ACTIVE (LOCKED)" : "ACTIVATE ZEN MODE"}
+                                        >
+                                            {zen.mode ? '🔥' : '📛'}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            
+
+                        </div>
+                    </div>
+
+                    {/* COLLAPSIBLE COMMAND DECK */}
+                    <div className={`command-deck ${deckOpen ? 'open' : ''}`}>
+                        <div className="deck-row">
+                            <button className="deck-btn" onClick={()=>changeDate(-1)}>PREV</button>
+                            <button className="deck-btn" onClick={()=>changeDate(1)}>NEXT</button>
+                            <div className="theme-bar">
+                                {['matrix','redline','deepspace','amber','ghost'].map(t=>(
+                                    <div key={t} className="theme-dot" style={{background: t==='matrix'?'#0f4':t==='redline'?'#f00':t==='deepspace'?'#0df':t==='amber'?'#fb0':'#eee'}} onClick={()=>changeTheme(t)}></div>
+                                ))}
+                            </div>
+                            <div style={{flexGrow:1}}></div>
+                            <button className="deck-btn danger" onClick={()=>{if(confirm('WIPE TODAY LOGS?')) fetch('/api/reset_day',{method:'POST'}).then(()=>window.location.reload())}}>RESET</button>
+                        </div>
+                        
+                        <div className="deck-row" style={{flexDirection: 'column', gap: '15px'}}>
+                            <div className="sonic-deck" style={{width: '100%', marginLeft: 0, paddingLeft: 0, borderLeft: 'none'}}>
+                                {artUrl ? <img src={artUrl} className="album-art" /> : <span className="material-symbols-outlined" style={{color:'var(--dim)'}}>music_note</span>}
+                                <div className="track-info">
+                                    <div style={{fontSize:'0.8rem'}}>{media.title}</div>
+                                    <div style={{fontSize:'0.65rem', color:'var(--dim)'}}>{media.artist}</div>
+                                </div>
+                                <button className="deck-btn" onClick={()=>ctrlMedia('prev')}>PREV</button>
+                                <button className="deck-btn" onClick={()=>ctrlMedia('playpause')}>P/P</button>
+                                <button className="deck-btn" onClick={()=>ctrlMedia('next')}>NEXT</button>
+                            </div>
+                        </div>
+
+                        <div className="deck-row">
+                            <button className="deck-btn" style={{flex:1}} onClick={addTask}>+ ADD TASK</button>
+                            <button className="deck-btn" style={{flex:1}} onClick={()=>setSummaryOpen(true)}>MISSION REPORT</button>
+                        </div>
+                    </div>
+
+                    {scheduleItem && <div className="event-banner">{(scheduleItem.type === 'PREP' || scheduleItem.type === 'GRIND') ? 'JUGGERNAUT PROTOCOL : ALL SUBJECTS ACTIVE' : scheduleItem.event}</div>}
+
+                    {Object.values(pausedTasks).map(pt => (
+                        <div key={pt.id} className="event-banner" style={{background: 'linear-gradient(90deg, #111, transparent)', display:'flex', justifyContent:'space-between', alignItems:'center', borderLeftColor:'var(--accent)', color:'#fb0'}}>
+                            <span>PAUSED: {pt.text} ({new Date(pt.elapsed*1000).toISOString().substr(11,8)})</span>
+                            <button className="engage-btn" onClick={() => resumeTask(pt.id)}>RESUME</button>
+                        </div>
+                    ))}
+
+                    {/* TASK LIST */}
+                    <div className="list-container">
+                        {tasks.map(t => (
+                            <div key={t.id} className={`task-item ${t.done ? 'done' : ''}`}>
+                                {/* Reorder & Checkbox Group */}
+                                <div style={{display:'flex', alignItems:'center', gap: '5px'}}>
+                                    <div style={{display:'flex', flexDirection:'column'}}>
+                                        <button style={{background:0, border:0, color:'var(--dim)', padding:0, height:15, cursor:'pointer'}} onClick={()=>moveTask(t.id, -1)}>
+                                            <span className="material-symbols-outlined" style={{fontSize:18}}>keyboard_arrow_up</span>
+                                        </button>
+                                        <button style={{background:0, border:0, color:'var(--dim)', padding:0, height:15, cursor:'pointer'}} onClick={()=>moveTask(t.id, 1)}>
+                                            <span className="material-symbols-outlined" style={{fontSize:18}}>keyboard_arrow_down</span>
+                                        </button>
+                                    </div>
+                                    <button style={{background:0, border:0, color:'var(--text)', cursor:'pointer'}} onClick={()=>toggleTask(t.id)}>
+                                        <span className="material-symbols-outlined">{t.done ? 'check_box' : 'check_box_outline_blank'}</span>
+                                    </button>
+                                </div>
+
+                                {/* Text & Tag Section - Shrinkable */}
+                                <div style={{flex: '1 1 200px', minWidth: 0, display:'flex', flexDirection:'column'}}>
+                                    <input className="task-input" style={{width: '100%'}} value={t.text} onChange={e => saveTasks(tasks.map(x=>x.id===t.id?{...x, text:e.target.value}:x))} />
+                                    <div style={{paddingLeft:10, display:'flex', gap:10, alignItems:'center'}}>
+                                        <span className="tag">{t.tag}</span>
+                                        <select style={{background:'#000', color:'var(--dim)', border:'1px solid #222', fontSize:'0.7rem'}} value={t.mode} onChange={e=>saveTasks(tasks.map(x=>x.id===t.id?{...x, mode:e.target.value}:x))}>
+                                            <option value="offline">OFFLINE</option>
+                                            <option value="focus">FOCUS</option>
+                                            <option value="training">TRAINING</option>
+                                            <option value="online_test">ONLINE TEST</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons Group */}
+                                <div style={{display:'flex', alignItems:'center', gap: '8px', marginLeft: 'auto'}}>
+                                    {!t.done && t.mode !== 'offline' && <button className="engage-btn" onClick={()=>initiate(t)}>ENGAGE</button>}
+                                    <button className="icon-btn" style={{background:0, border:0, color:'#333', cursor:'pointer'}} onClick={()=>deleteTask(t.id)}>
+                                        <span className="material-symbols-outlined">delete</span>
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* OVERLAYS */}
+                    {configTask && (
+                        <div className="overlay">
+                            <div className="modal">
+                                <h3>MISSION CONFIG</h3>
+                                <p style={{fontSize:'0.8rem'}}>{configTask.text}</p>
+                                <input className="inp-full" type="number" value={probCount} onChange={e=>setProbCount(e.target.value)} />
+                                <div style={{display:'flex', gap:10}}>
+                                    <button className="hud-btn" style={{flex:1}} onClick={()=>{const t = {...configTask, problems:parseInt(probCount)}; setConfigTask(null); startActiveTask(t);}}>START</button>
+                                    <button className="hud-btn" style={{flex:1, borderColor: 'var(--alert)', color:'var(--alert)'}} onClick={()=>setConfigTask(null)}>CANCEL</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTask && (
+                        <HUD 
+                            zen={zen}
+                            task={activeTask} 
+                            media={media}
+                            artUrl={artUrl}
+                            ctrlMedia={ctrlMedia}
+                            onAbort={()=>{setActiveTask(null); fetch('/api/task/active', {method:'DELETE'});}} 
+                            onBreak={takeBreak}
+                            onComplete={(s)=>{ 
+                                setStats(s); 
+                                saveTasks(tasks.map(x=>x.id===activeTask.id?{...x,done:true}:x)); 
+                                setActiveTask(null); 
+                            }} 
+                        />
+                    )}
+
+                    {summaryOpen && <MissionReport stats={stats} date={date} scheduleItem={scheduleItem} onClose={()=>setSummaryOpen(false)} />}
+
+                </div>
+            );
+        };
+
+        const HUD = ({ zen, task, onAbort, onComplete, onBreak, media, artUrl, ctrlMedia }) => {
+            const [time, setTime] = React.useState(task.elapsed || 0);
+            const [qTime, setQTime] = React.useState(0);
+            const [qIdx, setQIdx] = React.useState(task.lastQ || 1);
+            const [correct, setCorrect] = React.useState(task.lastCorrect || 0);
+            const [score, setScore] = React.useState(task.lastScore || 0);
+
+            const [view, setView] = React.useState('timer');
+            const [marks, setMarks] = React.useState("");
+            const [tMarks, setTMarks] = React.useState("");
+            
+            const [showMusic, setShowMusic] = React.useState(false);
+
+            React.useEffect(() => {
+                let wl = null;
+                if(navigator.wakeLock) navigator.wakeLock.request('screen').then(l=>wl=l);
+                
+                const startTs = task.abs_start || Date.now();
+                const baseElapsed = task.elapsed || 0;
+                
+                const tick = () => {
+                    const now = Date.now();
+                    const totalSeconds = baseElapsed + Math.floor((now - startTs) / 1000);
+                    setTime(totalSeconds);
+                    setQTime(t=>t+1);
+                };
+                
+                const iv = setInterval(tick, 1000);
+                tick();
+                
+                return () => { clearInterval(iv); if(wl) wl.release(); };
+            }, [task.abs_start, task.elapsed]);
+
+            // LOGIC: CORRECT (+4 and Next)
+            const handleCorrect = () => {
+                if(navigator.vibrate) navigator.vibrate(20);
+                setCorrect(c => c + 1);
+                setScore(s => s + 4);
+                advanceQuestion();
+            };
+
+            // LOGIC: RETRY (-1 and Stay)
+            const handleRetry = () => {
+                if(navigator.vibrate) navigator.vibrate([50, 50]); // Double buzz for penalty
+                setScore(s => s - 1);
+                // Do not advance qIdx
+            };
+
+            // LOGIC: SKIP (0 and Next)
+            const handleSkip = () => {
+                if(navigator.vibrate) navigator.vibrate(20);
+                advanceQuestion();
+            };
+
+            const advanceQuestion = () => {
+                setQTime(0);
+                if(task.mode==='training' && qIdx < (task.problems || 15)) { 
+                    setQIdx(i=>i+1); 
+                } else { 
+                    finish(); 
+                }
+            };
+
+            const finish = (finalC) => {
+                // Pass current correct count if not provided
+                const c = finalC !== undefined ? finalC : correct;
+                if(task.mode === 'online_test') { setView('report'); return; }
+                
+                // Submit with calculated score
+                submit({
+                    type: task.mode, 
+                    duration: time, 
+                    questions: task.mode==='training'?(task.problems||15):0, 
+                    correct: c,
+                    marks_scored: score // Save the calculated score
+                });
+            };
+
+            const submit = (payload) => {
+                fetch('/api/log_session', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, task_name:task.text, tag:task.tag})})
+                .then(r=>r.json()).then(d=>onComplete(d.stats));
+            };
+
+            if(view==='report') return (
+                <div className="overlay">
+                    <div className="modal">
+                        <h3>TEST COMPLETED</h3>
+                        <input className="inp-full" placeholder="MARKS SCORED" type="number" value={marks} onChange={e=>setMarks(e.target.value)} />
+                        <input className="inp-full" placeholder="TOTAL MARKS" type="number" value={tMarks} onChange={e=>setTMarks(e.target.value)} />
+                        <button className="hud-btn" style={{width:'100%'}} onClick={()=>submit({type:task.mode, duration:time, marks_scored:marks, marks_total:tMarks, questions:task.problems||0, correct:0})}>LOG RESULTS</button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="overlay">
+                    <div className="hud-content-wrapper">
+                        
+                        <div className="hud-left-pane" style={{width:'100%', display:'flex', flexDirection:'column', alignItems:'center'}}>
+                            <div style={{color:'var(--dim)', letterSpacing:4, marginBottom: 10}}>{task.mode.toUpperCase()} ACTIVE</div>
+                            {time >= 3600 && (
+                                <div style={{marginBottom: -10, fontSize: '1.5rem'}}>
+                                    {Array.from({length: Math.floor(time / 3600)}).map((_, i) => (
+                                        <span key={i} className="lantern">🏮</span>
+                                    ))}
+                                </div>
+                            )}
+                            <div className={`timer-big ${time >= 3120 ? 'overdrive-text' : ''}`}>
+                                {new Date(time*1000).toISOString().substr(11,8)}
+                            </div>
+                            {time >= 3120 && <div style={{color:'#fb0', fontSize:'0.75rem', fontWeight:'bold', letterSpacing:'2px', marginBottom:'10px', animation:'pulse 1.5s infinite'}}>🔥 OVERDRIVE ACTIVE (1.5x)</div>}
+                            
+                            {/* SCORE DISPLAY ADDED HERE */}
+                            {task.mode === 'training' && (
+                                <div className="timer-q">
+                                    Q_{qIdx} | {new Date(qTime*1000).toISOString().substr(14,5)} | <span style={{color: score >= 0 ? 'var(--text)' : 'var(--alert)'}}>SCR: {score > 0 ? '+'+score : score}</span>
+                                </div>
+                            )}
+                            
+                            <h2 style={{textAlign:'center', padding:'0 20px', fontSize: '1rem', color: '#fff'}}>{task.text}</h2>
+                            
+                            <div className="hud-grid">
+                                {task.mode === 'training' ? (
+                                    <>
+                                        <button className="hud-btn" onClick={handleCorrect}>CORRECT (+4)</button>
+                                        <button className="hud-btn" style={{borderColor:'var(--alert)', color:'var(--alert)'}} onClick={handleRetry}>RETRY (-1)</button>
+                                        <button className="hud-btn" style={{borderColor:'#444', color:'#444'}} onClick={handleSkip}>SKIP (0)</button>
+                                    </>
+                                ) : (
+                                    <button className="hud-btn" style={{gridColumn:'1/span 3'}} onClick={()=>finish()}>TERMINATE SESSION</button>
+                                )}
+                                
+                                {/* Updated Take Break to save score */}
+                                <button className={`hud-btn ${(zen && zen.mode && zen.balance > 0) ? 'break-btn-active' : ''}`} style={{gridColumn:'1/span 3', borderColor: '#fb0', color: '#fb0', marginTop: '5px', display: (zen && zen.mode && zen.balance <= 0) ? 'none' : 'block'}} 
+                                        onClick={() => onBreak(time, qIdx, correct, score)}>
+                                    TAKE BREAK (SAVE)
+                                </button>
+                            </div>
+                            <button style={{marginTop:20, background:0, border:0, color:'#555', cursor:'pointer'}} onClick={onAbort}>ABORT OPERATION</button>
+                        </div>
+
+                        {/* RIGHT PANE (Unchanged logic) */}
+                        <div className="hud-right-pane" style={{
+                            marginTop: 30, width: '90%', maxWidth: '400px', borderTop: '1px solid #333', paddingTop: 15,
+                            display: (window.innerWidth >= 800 || showMusic) ? 'flex' : 'none' 
+                        }}>
+                            <div className="music-toggle-btn" style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, width:'100%'}}>
+                                <span style={{fontSize:'0.7rem', color:'var(--dim)'}}>JPX MEDIA LINK</span>
+                                <span className="material-symbols-outlined" style={{fontSize:'1.2rem', cursor:'pointer'}} onClick={()=>setShowMusic(!showMusic)}>{showMusic ? 'expand_less' : 'expand_more'}</span>
+                            </div>
+                            
+                            <div style={{display: (showMusic || window.innerWidth >= 800) ? 'block' : 'none', width: '100%'}}>
+                                <div className="sonic-deck" style={{border:'1px solid #333', borderRadius: 4, padding: 10, background: '#000'}}>
+                                    {artUrl ? <img src={artUrl} className="album-art" style={{width:50, height:50}} /> : <span className="material-symbols-outlined" style={{color:'var(--dim)'}}>music_note</span>}
+                                    <div className="track-info">
+                                        <div style={{fontSize:'0.8rem'}}>{media.title}</div>
+                                        <div style={{fontSize:'0.65rem', color:'var(--dim)'}}>{media.artist}</div>
+                                    </div>
+                                </div>
+                                <div style={{display:'flex', gap:10, marginTop:10}}>
+                                    <button className="deck-btn" style={{flex:1}} onClick={()=>ctrlMedia('prev')}>PREV</button>
+                                    <button className="deck-btn" style={{flex:1}} onClick={()=>ctrlMedia('playpause')}>P/P</button>
+                                    <button className="deck-btn" style={{flex:1}} onClick={()=>ctrlMedia('next')}>NEXT</button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            );
+        };
+
+        const MissionReport = ({ stats, date, scheduleItem, onClose }) => {
+            React.useEffect(() => { 
+                if(navigator.vibrate) navigator.vibrate([100,50,100]); 
+            }, []);
+
+            // Formats ATPQ beautifully
+            const fmtTime = (s) => {
+                if(!s) return "0s";
+                if(s < 60) return Math.floor(s) + "s";
+                return Math.floor(s/60) + "m " + Math.floor(s%60) + "s";
+            };
+
+            const hrs = (stats.today_time||0)/3600;
+            const outRatio = (stats.output_time||0) / (stats.today_time||1);
+            const grindRatio = stats.grind_ratio || 0;
+            const acc = stats.accuracy || 0;
+            
+            // Proprietary Grading System
+            let score = (hrs * 10) + (acc * 0.4) + (outRatio * 20); 
+            let grade = 'C';
+            if(score >= 95) grade = 'S+';
+            else if(score >= 80) grade = 'S';
+            else if(score >= 65) grade = 'A';
+            else if(score >= 50) grade = 'B';
+
+            const targetMet = scheduleItem && scheduleItem.target > 0 && hrs >= scheduleItem.target;
+            const finalCoins = (stats.total_coins || 0) + (targetMet ? 500 : 0);
+
+            return (
+                <div className="overlay" style={{background: 'rgba(5,5,5,0.98)', overflowY: 'auto', padding: '10px', display:'block', zIndex: 1000}}>
+                    <div style={{maxWidth: '600px', margin: '40px auto', paddingBottom: '50px'}}>
+                        
+                        {/* HEADER */}
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #333', paddingBottom:'15px', marginBottom:'20px'}}>
+                            <div>
+                                <h1 style={{margin:0, color:'var(--accent)', fontSize:'2rem', fontFamily:'var(--f-hud)'}}>MISSION REPORT</h1>
+                                <div style={{color:'var(--dim)', fontSize:'0.8rem', letterSpacing:'1px'}}>{getLocalKey(date)} // GRADE: <span style={{color: grade.includes('S')?'#0f0':grade==='A'?'#fb0':'#fff', fontWeight:'bold', fontSize:'1rem'}}>{grade}</span></div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                                <div style={{fontSize:'2.2rem', fontFamily:'var(--f-hud)', color:'#fb0', fontWeight:'bold'}}>{finalCoins}</div>
+                                <div style={{fontSize:'0.65rem', color:'#fb0', letterSpacing:'1px'}}>NET CREDITS</div>
+                            </div>
+                        </div>
+
+                        {/* KEY METRICS */}
+                        <div className="hud-grid" style={{width:'100%', maxWidth:'100%', marginBottom:'20px'}}>
+                            <div style={{background:'#111', padding:'15px', border:'1px solid #333', textAlign:'center', borderRadius:'4px'}}>
+                                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'var(--text)'}}>{hrs.toFixed(1)}h</div>
+                                <div style={{fontSize:'0.7rem', color:'var(--dim)'}}>TOTAL TIME</div>
+                            </div>
+                            <div style={{background:'#111', padding:'15px', border:'1px solid #333', textAlign:'center', borderRadius:'4px'}}>
+                                <div style={{fontSize:'1.5rem', fontWeight:'bold', color: acc>80?'#0f0':acc>50?'#fb0':'#f55'}}>{acc.toFixed(0)}%</div>
+                                <div style={{fontSize:'0.7rem', color:'var(--dim)'}}>GLOBAL ACC</div>
+                            </div>
+                            <div style={{background:'#111', padding:'15px', border:'1px solid #333', textAlign:'center', borderRadius:'4px'}}>
+                                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'#fff'}}>{stats.questions_today || 0}</div>
+                                <div style={{fontSize:'0.7rem', color:'var(--dim)'}}>PROBLEMS</div>
+                            </div>
+                            <div style={{background:'#111', padding:'15px', border:'1px solid #333', textAlign:'center', borderRadius:'4px'}}>
+                                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'#0df'}}>{stats.tasks_completed||0}/{stats.tasks_total||0}</div>
+                                <div style={{fontSize:'0.7rem', color:'var(--dim)'}}>DIRECTIVES</div>
+                            </div>
+                            <div style={{background:'#111', padding:'15px', border:'1px solid #333', textAlign:'center', borderRadius:'4px', gridColumn: 'span 2'}}>
+                                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'#f0f'}}>{(grindRatio*100).toFixed(0)}%</div>
+                                <div style={{fontSize:'0.7rem', color:'var(--dim)'}}>GRIND RATIO (REAL-TIME ABS)</div>
+                            </div>
+                        </div>
+
+                        {/* DEEP DIVE TABLE */}
+                        <div style={{background:'#111', border:'1px solid #333', padding:'15px', marginBottom:'20px', borderRadius:'4px'}}>
+                            <h3 style={{marginTop:0, borderBottom:'1px solid #333', paddingBottom:'10px', fontSize:'0.9rem', color:'var(--dim)', letterSpacing:'1px'}}>SUBJECT ANALYTICS & ATPQ</h3>
+                            
+                            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:'5px', fontSize:'0.7rem', color:'var(--dim)', marginBottom:'15px', textTransform:'uppercase', fontWeight:'bold'}}>
+                                <div>TAG</div>
+                                <div>TIME</div>
+                                <div>ATPQ (SPD)</div>
+                                <div>SCORE / ACC</div>
+                            </div>
+
+                            {Object.keys(stats.subject_breakdown || {}).length > 0 ? Object.entries(stats.subject_breakdown).map(([tag, data]) => {
+                                const isZero = data.time === 0;
+                                if(isZero) return null;
+                                const atpq = data.q > 0 ? (data.time / data.q) : 0;
+                                const t_acc = data.q > 0 ? (data.c / data.q * 100) : 0;
+
+                                return (
+                                    <div key={tag} style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:'5px', alignItems:'center', marginBottom:'12px', borderBottom:'1px dashed #222', paddingBottom:'8px'}}>
+                                        <div style={{fontWeight:'bold', color:'var(--text)', fontSize:'0.9rem'}}>{tag}</div>
+                                        <div style={{color:'#ddd', fontSize:'0.85rem'}}>{fmtTime(data.time)}</div>
+                                        <div>
+                                            {data.q > 0 ? (
+                                                <span style={{color: atpq < 120 ? '#0f0' : atpq < 240 ? '#fb0' : '#f55', fontWeight:'bold', fontSize:'0.85rem'}}>
+                                                    {fmtTime(atpq)}/Q
+                                                </span>
+                                            ) : <span style={{opacity:0.3}}>-</span>}
+                                        </div>
+                                        <div style={{display:'flex', flexDirection:'column', gap:'3px'}}>
+                                            {(data.marks > 0 || data.marks_total > 0) && (
+                                                <span style={{color: '#0df', fontWeight:'bold', fontSize:'0.9rem'}}>{data.marks}/{data.marks_total} <span style={{fontSize:'0.65em', color:'#666'}}>SCR</span></span>
+                                            )}
+                                            {data.train_q > 0 ? (() => {
+                                                const tr_acc = data.train_c / data.train_q * 100;
+                                                return (
+                                                    <span>
+                                                        <span style={{color: tr_acc > 80 ? '#0f0' : tr_acc > 50 ? '#fb0' : '#f55', fontWeight:'bold', fontSize:'0.9rem'}}>{tr_acc.toFixed(0)}%</span>
+                                                        <span style={{fontSize:'0.65em', color:'#666', marginLeft:'4px'}}>({data.train_c}/{data.train_q})</span>
+                                                    </span>
+                                                );
+                                            })() : (data.marks === 0 && data.marks_total === 0) && <span style={{opacity:0.3}}>-</span>}
+                                        </div>
+                                    </div>
+                                );
+                            }) : <div style={{textAlign:'center', color:'#555', padding:'10px'}}>NO SUBJECT DATA</div>}
+                        </div>
+
+                        {scheduleItem && (
+                            <div className="event-banner" style={{textAlign:'center', padding:'15px', borderRadius:'4px', background: targetMet?'rgba(0,255,0,0.1)':'rgba(255,0,0,0.1)', borderColor: targetMet?'#0f0':'#f00'}}>
+                                <div style={{color:'#fff', marginBottom:'5px'}}>{scheduleItem.event}</div>
+                                {targetMet ? 
+                                    <span style={{color:'#0f0', fontWeight:'bold'}}>MISSION ACCOMPLISHED 🏆 (+500 CREDITS)</span> : 
+                                    <span style={{color:'var(--alert)', fontWeight:'bold'}}>TARGET MISSED by {Math.abs(hrs - scheduleItem.target).toFixed(1)}h (Goal: {scheduleItem.target}h)</span>
+                                }
+                            </div>
+                        )}
+
+                        <button className="hud-btn" style={{width:'100%', marginTop:'10px'}} onClick={onClose}>CLOSE REPORT</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

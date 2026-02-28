@@ -1,0 +1,6 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.jaexo.malachite'
+    compileSdk 34
+    defaultConfig { applicationId "com.jaexo.malachite"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
+}

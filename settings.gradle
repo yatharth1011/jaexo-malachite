@@ -1,0 +1,2 @@
+rootProject.name = "Malachite"
+include ":app"
