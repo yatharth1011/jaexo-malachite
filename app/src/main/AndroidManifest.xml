@@ -5,14 +5,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-    
-    <application 
-        android:label="Malachite" 
-        android:icon="@mipmap/ic_launcher" 
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-        android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true">
-        
+    <application android:label="Malachite" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.NoTitleBar.Fullscreen" android:requestLegacyExternalStorage="true" android:usesCleartextTraffic="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -20,9 +13,7 @@
             </intent-filter>
         </activity>
         <service android:name=".MediaListener" android:label="Malachite Media Sync" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
+            <intent-filter> <action android:name="android.service.notification.NotificationListenerService" /> </intent-filter>
         </service>
     </application>
 </manifest>

@@ -256,25 +256,50 @@
         
         // --- 2. UNIFIED DATABASE HANDLER (Matches jpx.py schema) ---
         let DB = { logs: [], tasks_state: {}, zen: {}, total_stats: {study_time: 0} };
+        
+        // 🔒 CRITICAL SAFEGUARD: Prevents wiping data if DB fails to load
+        let dbSafeToSave = false; 
 
         const loadDB = () => {
             try {
                 let raw = null;
                 if (window.AndroidBridge) {
                     raw = window.AndroidBridge.readFile(DB_PATH);
+                    
+                    if (raw === '__ERROR__') {
+                        // File exists but is locked by Python, or permission denied.
+                        dbSafeToSave = false; 
+                        return; 
+                    }
+                    if (raw === '__NOT_FOUND__') {
+                        // Brand new install, safe to create a blank slate.
+                        dbSafeToSave = true; 
+                        return;
+                    }
                 } else {
                     raw = localStorage.getItem('jaexo_ultimate_v8_local');
+                    if (!raw) { dbSafeToSave = true; return; }
                 }
+                
                 if (raw && raw.trim() !== '') {
-                    DB = JSON.parse(raw);
+                    DB = JSON.parse(raw); // If this fails, it jumps to catch()
                     if(!DB.logs) DB.logs = [];
                     if(!DB.tasks_state) DB.tasks_state = {};
                     if(!DB.zen) DB.zen = {};
+                    
+                    dbSafeToSave = true; // Load successful! Unlock saving.
                 }
-            } catch (e) { console.error("DB Load Error", e); }
+            } catch (e) { 
+                console.error("DB Load Error - Locking Save Function to prevent wipe!", e); 
+                dbSafeToSave = false; 
+            }
         };
 
         const saveDB = () => {
+            if (!dbSafeToSave) {
+                console.warn("🛡️ SAVE BLOCKED: Database was not successfully loaded. Wipe prevented.");
+                return; 
+            }
             try {
                 const dataStr = JSON.stringify(DB, null, 2);
                 if (window.AndroidBridge) {

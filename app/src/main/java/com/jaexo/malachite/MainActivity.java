@@ -74,13 +74,16 @@ public class MainActivity extends Activity {
                         path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
                     }
                     File f = new File(path);
-                    if (!f.exists()) return "{}";
+                    if (!f.exists()) return "__NOT_FOUND__";
                     byte[] bytes = new byte[(int) f.length()];
                     FileInputStream in = new FileInputStream(f);
                     in.read(bytes);
                     in.close();
                     return new String(bytes, "UTF-8");
-                } catch (Exception e) { return "{}"; }
+                } catch (Exception e) { 
+                    // Tell JS that the file exists but we failed to read it (lock/permissions)
+                    return "__ERROR__"; 
+                }
             }
 
             @JavascriptInterface
@@ -91,9 +94,15 @@ public class MainActivity extends Activity {
                     }
                     File f = new File(path);
                     if(!f.getParentFile().exists()) f.getParentFile().mkdirs();
-                    FileOutputStream out = new FileOutputStream(f);
+                    
+                    // ATOMIC WRITE: Write to a .tmp file first, then swap it.
+                    // This guarantees zero corruption if the app is killed mid-save.
+                    File tmpFile = new File(path + ".tmp");
+                    FileOutputStream out = new FileOutputStream(tmpFile);
                     out.write(data.getBytes("UTF-8"));
                     out.close();
+                    
+                    tmpFile.renameTo(f);
                 } catch (Exception e) { e.printStackTrace(); }
             }
         }, "AndroidBridge");
@@ -113,30 +122,18 @@ public class MainActivity extends Activity {
         }, new IntentFilter("MEDIA_UPDATE"));
     }
 
-    // === NEW: LIFECYCLE DEEP FREEZE LOGIC ===
-    @Override
-    protected void onPause() {
+    @Override protected void onPause() {
         super.onPause();
-        if (webView != null) {
-            webView.onPause();
-            webView.pauseTimers(); // Completely freezes all JavaScript intervals
-        }
+        if (webView != null) { webView.onPause(); webView.pauseTimers(); }
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
-        if (webView != null) {
-            webView.resumeTimers(); // Wakes up JS logic
-            webView.onResume();
-        }
+        if (webView != null) { webView.resumeTimers(); webView.onResume(); }
     }
     
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         super.onDestroy();
-        if (webView != null) {
-            webView.destroy();
-        }
+        if (webView != null) webView.destroy();
     }
 }

@@ -15,18 +15,12 @@ const dirs = [
 
 dirs.forEach(d => fs.mkdirSync(d, { recursive: true }));
 
-// 1. Copy Assets & Icon
 fs.copyFileSync('jaexo-malachite.html', 'app/src/main/assets/jaexo-malachite.html');
 try {
     const iconDirs = ['hdpi', 'mdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
-    iconDirs.forEach(d => {
-        fs.copyFileSync('malachite_icon.png', `app/src/main/res/mipmap-${d}/ic_launcher.png`);
-    });
-} catch (e) {
-    console.log("⚠️ 'malachite_icon.png' not found. Using default.");
-}
+    iconDirs.forEach(d => { fs.copyFileSync('malachite_icon.png', `app/src/main/res/mipmap-${d}/ic_launcher.png`); });
+} catch (e) {}
 
-// 2. Android Manifest
 fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.jaexo.malachite">
     <uses-permission android:name="android.permission.INTERNET" />
@@ -34,14 +28,7 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-    
-    <application 
-        android:label="Malachite" 
-        android:icon="@mipmap/ic_launcher" 
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-        android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true">
-        
+    <application android:label="Malachite" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.NoTitleBar.Fullscreen" android:requestLegacyExternalStorage="true" android:usesCleartextTraffic="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -49,14 +36,11 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
             </intent-filter>
         </activity>
         <service android:name=".MediaListener" android:label="Malachite Media Sync" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
+            <intent-filter> <action android:name="android.service.notification.NotificationListenerService" /> </intent-filter>
         </service>
     </application>
 </manifest>`);
 
-// 3. MainActivity (ADDED LIFECYCLE FREEZE LOGIC)
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MainActivity.java', `package com.jaexo.malachite;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -133,13 +117,16 @@ public class MainActivity extends Activity {
                         path = path.replace("/storage/emulated/0/", Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
                     }
                     File f = new File(path);
-                    if (!f.exists()) return "{}";
+                    if (!f.exists()) return "__NOT_FOUND__";
                     byte[] bytes = new byte[(int) f.length()];
                     FileInputStream in = new FileInputStream(f);
                     in.read(bytes);
                     in.close();
                     return new String(bytes, "UTF-8");
-                } catch (Exception e) { return "{}"; }
+                } catch (Exception e) { 
+                    // Tell JS that the file exists but we failed to read it (lock/permissions)
+                    return "__ERROR__"; 
+                }
             }
 
             @JavascriptInterface
@@ -150,9 +137,15 @@ public class MainActivity extends Activity {
                     }
                     File f = new File(path);
                     if(!f.getParentFile().exists()) f.getParentFile().mkdirs();
-                    FileOutputStream out = new FileOutputStream(f);
+                    
+                    // ATOMIC WRITE: Write to a .tmp file first, then swap it.
+                    // This guarantees zero corruption if the app is killed mid-save.
+                    File tmpFile = new File(path + ".tmp");
+                    FileOutputStream out = new FileOutputStream(tmpFile);
                     out.write(data.getBytes("UTF-8"));
                     out.close();
+                    
+                    tmpFile.renameTo(f);
                 } catch (Exception e) { e.printStackTrace(); }
             }
         }, "AndroidBridge");
@@ -172,35 +165,22 @@ public class MainActivity extends Activity {
         }, new IntentFilter("MEDIA_UPDATE"));
     }
 
-    // === NEW: LIFECYCLE DEEP FREEZE LOGIC ===
-    @Override
-    protected void onPause() {
+    @Override protected void onPause() {
         super.onPause();
-        if (webView != null) {
-            webView.onPause();
-            webView.pauseTimers(); // Completely freezes all JavaScript intervals
-        }
+        if (webView != null) { webView.onPause(); webView.pauseTimers(); }
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
-        if (webView != null) {
-            webView.resumeTimers(); // Wakes up JS logic
-            webView.onResume();
-        }
+        if (webView != null) { webView.resumeTimers(); webView.onResume(); }
     }
     
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         super.onDestroy();
-        if (webView != null) {
-            webView.destroy();
-        }
+        if (webView != null) webView.destroy();
     }
 }`);
 
-// 4. MediaListener
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MediaListener.java', `package com.jaexo.malachite;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -255,12 +235,9 @@ public class MediaListener extends NotificationListenerService {
     }
 }`);
 
-// 5. Build Configs
 fs.writeFileSync('settings.gradle', 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = "Malachite"\ninclude ":app"');
 fs.writeFileSync('build.gradle', 'plugins { id "com.android.application" version "8.1.1" apply false }');
 fs.writeFileSync('app/build.gradle', "plugins { id 'com.android.application' }\nandroid { namespace 'com.jaexo.malachite'; compileSdk 34; defaultConfig { applicationId 'com.jaexo.malachite'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0' } }");
-
-// 6. GitHub Actions
 fs.writeFileSync('.github/workflows/build.yml', "name: Build APK\non: [push, workflow_dispatch]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: { distribution: 'temurin', java-version: '17' }\n      - uses: gradle/actions/setup-gradle@v3\n        with: { gradle-version: '8.4' }\n      - run: gradle assembleDebug\n      - uses: actions/upload-artifact@v4\n        with: { name: Malachite-APK, path: app/build/outputs/apk/debug/app-debug.apk }");
 
-console.log("✅ Fixes applied: Android WebView background freezing implemented.");
+console.log("✅ Fixes applied: Database Wipe Protection & Atomic File Saves implemented.");
