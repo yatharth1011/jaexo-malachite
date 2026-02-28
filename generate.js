@@ -26,7 +26,7 @@ try {
     console.log("⚠️ 'malachite_icon.png' not found. Using default.");
 }
 
-// 2. Android Manifest (Added Legacy Storage Bypass + Cleartext Traffic)
+// 2. Android Manifest
 fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.jaexo.malachite">
     <uses-permission android:name="android.permission.INTERNET" />
@@ -56,7 +56,7 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
     </application>
 </manifest>`);
 
-// 3. MainActivity (Unlocked CORS for Thumbnails + Dynamic Storage Path Resolution)
+// 3. MainActivity (ADDED WebChromeClient FOR ALERTS/CONFIRMS)
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MainActivity.java', `package com.jaexo.malachite;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -69,6 +69,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Toast;
@@ -82,6 +83,10 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
+        
+        // This single line fixes alert(), confirm(), and prompt()
+        webView.setWebChromeClient(new WebChromeClient());
+        
         setContentView(webView);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -234,4 +239,4 @@ fs.writeFileSync('app/build.gradle', "plugins { id 'com.android.application' }\n
 // 6. GitHub Actions
 fs.writeFileSync('.github/workflows/build.yml', "name: Build APK\non: [push, workflow_dispatch]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: { distribution: 'temurin', java-version: '17' }\n      - uses: gradle/actions/setup-gradle@v3\n        with: { gradle-version: '8.4' }\n      - run: gradle assembleDebug\n      - uses: actions/upload-artifact@v4\n        with: { name: Malachite-APK, path: app/build/outputs/apk/debug/app-debug.apk }");
 
-console.log("✅ Fixes applied: CORS unlocked, Scoped Storage Bypassed, Dynamic Paths added.");
+console.log("✅ Fixes applied: JavaScript Dialogs (confirm/alert) enabled!");

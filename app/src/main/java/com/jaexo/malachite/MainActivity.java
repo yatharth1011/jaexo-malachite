@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Toast;
@@ -23,6 +24,10 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
+        
+        // This single line fixes alert(), confirm(), and prompt()
+        webView.setWebChromeClient(new WebChromeClient());
+        
         setContentView(webView);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
