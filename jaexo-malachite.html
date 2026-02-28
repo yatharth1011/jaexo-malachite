@@ -242,10 +242,47 @@
     <!-- ========================================== -->
     <script>
     (function() {
-        const LS = {
-            get: (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } },
-            set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} },
-            del: (k) => { try { localStorage.removeItem(k); } catch(e) {} }
+        // --- 1. ANDROID NATIVE BRIDGE ---
+        window.ANDROID_MEDIA_STATE = { title: 'SYSTEM IDLE', artist: 'Native Media', active: false };
+        window.updateNativeMedia = (title, artist, active) => {
+            window.ANDROID_MEDIA_STATE = {
+                title: (title && title !== 'null') ? title : 'SYSTEM IDLE',
+                artist: (artist && artist !== 'null') ? artist : 'Unknown',
+                active: active === 'true'
+            };
+        };
+
+        const DB_PATH = '/storage/emulated/0/jpx_data/jaexo_ultimate_v8.json';
+        
+        // --- 2. UNIFIED DATABASE HANDLER (Matches jpx.py schema) ---
+        let DB = { logs: [], tasks_state: {}, zen: {}, total_stats: {study_time: 0} };
+
+        const loadDB = () => {
+            try {
+                let raw = null;
+                if (window.AndroidBridge) {
+                    raw = window.AndroidBridge.readFile(DB_PATH);
+                } else {
+                    raw = localStorage.getItem('jaexo_ultimate_v8_local');
+                }
+                if (raw && raw.trim() !== '') {
+                    DB = JSON.parse(raw);
+                    if(!DB.logs) DB.logs = [];
+                    if(!DB.tasks_state) DB.tasks_state = {};
+                    if(!DB.zen) DB.zen = {};
+                }
+            } catch (e) { console.error("DB Load Error", e); }
+        };
+
+        const saveDB = () => {
+            try {
+                const dataStr = JSON.stringify(DB, null, 2);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.writeFile(DB_PATH, dataStr);
+                } else {
+                    localStorage.setItem('jaexo_ultimate_v8_local', dataStr);
+                }
+            } catch (e) { console.error("DB Save Error", e); }
         };
 
         const getLocalKey = (d) => {
@@ -255,309 +292,323 @@
             return `${y}-${m}-${day}`;
         };
 
-        // --- ANDROID NATIVE BRIDGE INJECTION ---
-        window.ANDROID_MEDIA_STATE = { title: 'SYSTEM IDLE', artist: 'Native Media', active: false };
-        window.updateNativeMedia = (title, artist, active) => {
-            window.ANDROID_MEDIA_STATE = {
-                title: title && title !== 'null' ? title : 'SYSTEM IDLE',
-                artist: artist && artist !== 'null' ? artist : 'Unknown',
-                active: active === 'true'
+        const safeInt = (val) => {
+            try { return val ? parseInt(Number(val)) : 0; } catch { return 0; }
+        };
+
+        // --- 3. JAVASCRIPT REPLICA OF jpx.py LOGIC ---
+        const calculateStats = (targetDate) => {
+            if(!targetDate) targetDate = getLocalKey(new Date());
+            const dayLogs = DB.logs.filter(l => l.date === targetDate);
+            
+            let dayTime = 0, inputTime = 0, outputTime = 0;
+            let totalQ = 0, totalC = 0, totalMarks = 0, totalCoins = 0, totalLanterns = 0;
+            let subjects = {};
+            let firstStart = null, lastEnd = null, maxEndurance = 0;
+
+            dayLogs.forEach(l => {
+                let dur = safeInt(l.duration);
+                let ts = l.timestamp || (Date.now() / 1000);
+                
+                if (firstStart === null || (ts - dur) < firstStart) firstStart = ts - dur;
+                if (lastEnd === null || ts > lastEnd) lastEnd = ts;
+                if (dur > maxEndurance) maxEndurance = dur;
+                
+                dayTime += dur;
+                totalLanterns += Math.floor(dur / 3600);
+                
+                let n = String(l.task_name || 'OTHER').toUpperCase();
+                let tag = l.tag;
+                if (!tag || tag === 'MISC') {
+                    if (n.includes('MATH') || n.includes('ALGEBRA') || n.includes('CALC') || n.includes('B1:')) tag = 'MATH';
+                    else if (n.includes('B2: PHY') || n.includes('PHYSICS') || n.includes(' PHY')) tag = 'PHY';
+                    else if (n.includes('B2: PC') || n.includes('PC ') || n.includes('PHYSICAL')) tag = 'PC';
+                    else if (n.includes('B4:') || n.includes('IOC') || n.includes('INORGANIC')) tag = 'IOC';
+                    else if (n.includes('B3:') || n.includes('OC ') || n.includes('ORGANIC')) tag = 'OC';
+                    else if (n.includes('PHY')) tag = 'PHY';
+                    else if (n.includes('CHEM')) tag = 'CHEM';
+                    else tag = 'OTHER';
+                }
+
+                if (!subjects[tag]) subjects[tag] = { time: 0, q: 0, c: 0, train_q: 0, train_c: 0, marks: 0, marks_total: 0, has_test: false };
+                subjects[tag].time += dur;
+
+                if (l.type === 'focus') {
+                    inputTime += dur;
+                    totalCoins += dur <= 3600 ? Math.floor(dur / 60) : 60 + Math.floor((dur - 3600) / 40);
+                } else if (['training', 'online_test', 'test'].includes(l.type)) {
+                    if (['online_test', 'test'].includes(l.type)) subjects[tag].has_test = true;
+                    outputTime += dur;
+                    
+                    let qt = safeInt(l.questions_total);
+                    if (qt === 0) {
+                        let match = String(l.task_name || '').match(/[A-Z]:(\d+)\s*$/);
+                        if (match) qt = parseInt(match[1]);
+                    }
+                    let qc = safeInt(l.questions_correct);
+                    let ms = safeInt(l.marks_scored);
+                    let mt = safeInt(l.marks_total);
+                    if (l.type === 'training' && mt === 0) mt = qt * 4;
+
+                    subjects[tag].q += qt;
+                    subjects[tag].c += qc;
+                    if (l.type === 'training') {
+                        subjects[tag].train_q += qt;
+                        subjects[tag].train_c += qc;
+                    }
+                    subjects[tag].marks += ms;
+                    subjects[tag].marks_total += mt;
+                    
+                    totalQ += qt; totalC += qc; totalMarks += ms; totalCoins += ms;
+                }
+            });
+
+            const dayTasks = DB.tasks_state[targetDate] || [];
+            let offlineDone = dayTasks.filter(t => t.mode === 'offline' && t.done).length;
+            totalCoins += (offlineDone * 50);
+
+            let deductions = 0;
+            if (targetDate === getLocalKey(new Date())) deductions = safeInt((DB.zen || {}).coin_deductions);
+            else deductions = safeInt((DB.zen_history || {})[targetDate]);
+
+            let active = DB.active_task;
+            if (active && targetDate === getLocalKey(new Date())) {
+                let absStart = active.abs_start;
+                if (absStart) {
+                    let absStartSec = safeInt(absStart) / 1000.0;
+                    if (firstStart === null || absStartSec < firstStart) firstStart = absStartSec;
+                    
+                    let currentSec = Math.floor(safeInt(active.elapsed) + (Date.now() / 1000 - absStartSec));
+                    if (currentSec > maxEndurance) maxEndurance = currentSec;
+                    
+                    dayTime += currentSec;
+                    totalLanterns += Math.floor(currentSec / 3600);
+                    
+                    let tag = active.tag || 'OTHER';
+                    if (!subjects[tag]) subjects[tag] = { time: 0, q: 0, c: 0, train_q: 0, train_c: 0, marks: 0, marks_total: 0, has_test: false };
+                    subjects[tag].time += currentSec;
+                    
+                    if (active.mode === 'focus') {
+                        inputTime += currentSec;
+                        totalCoins += currentSec <= 3600 ? Math.floor(currentSec / 60) : 60 + Math.floor((currentSec - 3600) / 40);
+                    } else {
+                        outputTime += currentSec;
+                    }
+                }
+            }
+
+            let realElapsed = 0;
+            if (targetDate === getLocalKey(new Date())) {
+                realElapsed = firstStart ? (Date.now() / 1000 - firstStart) : 0;
+            } else {
+                realElapsed = (firstStart && lastEnd) ? (lastEnd - firstStart) : 0;
+            }
+            
+            let grindRatio = realElapsed > 0 ? (dayTime / realElapsed) : 0;
+            if (grindRatio > 1) grindRatio = 1.0;
+
+            return {
+                today_time: dayTime, input_time: inputTime, output_time: outputTime,
+                questions_today: totalQ, total_marks: totalMarks, lanterns: totalLanterns,
+                accuracy: totalQ > 0 ? (totalC / totalQ * 100) : 0,
+                subject_breakdown: subjects, total_coins: totalCoins - deductions,
+                tasks_completed: dayTasks.filter(t => t.done).length, tasks_total: dayTasks.length,
+                grind_ratio: grindRatio, max_endurance: maxEndurance,
+                zen_momentum: (DB.zen || {}).momentum || 0
             };
         };
 
-        // Offline Lofi Streams replacement for ADB Media Plugin
-        const STATIONS = [
-            { title: 'Lofi Girl Focus',      artist: 'ChilledCow',  url: 'https://play.streamafrica.net/lofiradio' },
-            { title: 'Synthwave / Retrowave', artist: 'The Midnight', url: 'https://streams.ilovemusic.de/iloveradio17.mp3' },
-            { title: 'Classical Masters',    artist: 'Mozart/Bach',  url: 'https://strm112.1.fm/classical_mobile_mp3' }
-        ];
-
-        window.audioPlayer = new Audio(STATIONS[0].url);
-        window.audioPlayer.loop = true;
-        let currentStationIdx = 0;
-        let isPlaying = false;
-
-        let zenBackendState = LS.get('jae_zen_state', {
-            mode: false, balance: 0, progress: 0, penalty: 0,
-            coin_deductions: 0, penalty_accum: 0, has_completed_task: false,
-            last_tick: Date.now(), last_finish_ts: 0, momentum: 0,
-            date: getLocalKey(new Date())
-        });
-
-        const getStats = (ds) => LS.get(`jae_stats_${ds}`, {
-            today_time: 0, output_time: 0, accuracy: 0, subject_breakdown: {},
-            total_coins: LS.get('jae_coins', 0), tasks_total: 0, tasks_completed: 0, questions_today: 0
-        });
-        const saveStats = (ds, st) => {
-            LS.set(`jae_stats_${ds}`, st);
-            if (st.total_coins !== undefined) LS.set('jae_coins', st.total_coins);
-        };
-
         const mockApi = async (url, options) => {
+            loadDB(); // Always sync before processing request
+            
             const method = (options && options.method) || 'GET';
             const body = (options && options.body) ? JSON.parse(options.body) : null;
             const [path, query] = url.split('?');
             const params = new URLSearchParams(query || '');
-            const dateStr = params.get('date') || getLocalKey(new Date());
             const today = getLocalKey(new Date());
 
+            if (path === '/api/zen/tick') {
+                if(!DB.zen) DB.zen = {};
+                let zen = DB.zen;
+                let zen_date = zen.date || today;
+                
+                if (zen_date !== today) {
+                    if(!DB.zen_history) DB.zen_history = {};
+                    DB.zen_history[zen_date] = zen.coin_deductions || 0;
+                    zen = { mode: false, balance: 0, progress: 0, last_ts: Date.now()/1000, penalty: 0, coin_deductions: 0, penalty_accum: 0, date: today, has_completed_task: false };
+                }
+                zen.date = today;
+                
+                let dayLogs = DB.logs.filter(l => l.date === today && safeInt(l.duration) > 0);
+                zen.has_completed_task = dayLogs.length > 0;
+                
+                // CRITICAL FIX: Absorb mode from body properly!
+                if (body && body.mode === true) zen.mode = true;
+                
+                let now = Date.now() / 1000;
+                let last = zen.last_ts || now;
+                let dt = now - last;
+                if (dt < 0) dt = 0;
+                
+                let status = body ? body.status : 'idle';
+                
+                if (zen.mode && dt > 0) {
+                    if (status === 'focus') {
+                        zen.progress = (zen.progress || 0) + dt;
+                        let cycleDur = 52 * 60;
+                        while (zen.progress >= cycleDur) {
+                            zen.progress -= cycleDur;
+                            zen.balance = (zen.balance || 0) + (17 * 60);
+                        }
+                    } else {
+                        let isOfflineGap = dt > 60;
+                        if (!isOfflineGap) {
+                            if (zen.balance > 0) {
+                                let taken = Math.min(zen.balance, dt);
+                                zen.balance -= taken;
+                                dt -= taken;
+                            }
+                            if (zen.has_completed_task && dt > 0) {
+                                let earnedCoins = 0;
+                                dayLogs.forEach(l => {
+                                    if(l.type === 'focus') earnedCoins += Math.floor(safeInt(l.duration)/60);
+                                    else earnedCoins += safeInt(l.marks_scored);
+                                });
+                                let dayTasks = DB.tasks_state[today] || [];
+                                let offlineDone = dayTasks.filter(t => t.mode === 'offline' && t.done).length;
+                                earnedCoins += (offlineDone * 50);
+                                
+                                let net = earnedCoins - (zen.coin_deductions || 0);
+                                if (net > 0) {
+                                    zen.penalty_accum = (zen.penalty_accum || 0) + dt;
+                                    let pens = Math.floor(zen.penalty_accum / 30);
+                                    if (pens > 0) {
+                                        pens = Math.min(pens, net);
+                                        zen.penalty_accum %= 30;
+                                        zen.penalty = (zen.penalty || 0) + pens;
+                                        zen.coin_deductions = (zen.coin_deductions || 0) + pens;
+                                    }
+                                } else { zen.penalty_accum = 0; }
+                            }
+                        }
+                    }
+                }
+                zen.last_ts = now;
+                DB.zen = zen;
+                saveDB();
+                return DB.zen;
+            }
+
             if (path === '/api/tasks') {
-                if (method === 'GET') return LS.get(`jae_tasks_${dateStr}`, null);
+                const dateKey = params.get('date') || (body && body.date) || today;
+                if (method === 'GET') return DB.tasks_state[dateKey] || null;
                 if (method === 'POST') {
-                    LS.set(`jae_tasks_${body.date}`, body.tasks);
-                    const st = getStats(body.date);
-                    st.tasks_total = body.tasks.length;
-                    st.tasks_completed = body.tasks.filter(t => t.done).length;
-                    saveStats(body.date, st);
+                    DB.tasks_state[dateKey] = body.tasks;
+                    saveDB();
+                    return { ok: true };
+                }
+            }
+
+            if (path === '/api/task/active') {
+                if (method === 'GET') return DB.active_task || null;
+                if (method === 'POST') {
+                    if (DB.zen && DB.zen.mode) {
+                        let lastFin = DB.zen.last_finish_ts || 0;
+                        if ((Date.now()/1000) - lastFin < 300) DB.zen.momentum = (DB.zen.momentum || 0) + 1;
+                        else DB.zen.momentum = 0;
+                    }
+                    DB.active_task = body;
+                    saveDB();
+                    return { ok: true };
+                }
+                if (method === 'DELETE') {
+                    delete DB.active_task;
+                    saveDB();
                     return { ok: true };
                 }
             }
 
             if (path === '/api/tasks/paused') {
-                if (method === 'GET') return LS.get('jae_paused', {});
-                if (method === 'POST') { LS.set('jae_paused', body); return { ok: true }; }
-            }
-
-            if (path === '/api/task/active') {
-                if (method === 'GET') return LS.get('jae_active', null);
-                if (method === 'POST') {
-                    const fStart = LS.get(`jae_first_start_${today}`, 0);
-                    if (!fStart) LS.set(`jae_first_start_${today}`, body.abs_start || Date.now());
-                    if (zenBackendState.mode) {
-                        const lastFin = zenBackendState.last_finish_ts || 0;
-                        zenBackendState.momentum = (lastFin > 0 && (Date.now() - lastFin) / 1000 < 300)
-                            ? (zenBackendState.momentum || 0) + 1 : 0;
-                        LS.set('jae_zen_state', zenBackendState);
-                    }
-                    LS.set('jae_active', body);
-                    return { ok: true };
-                }
-                if (method === 'DELETE') { LS.del('jae_active'); return { ok: true }; }
+                if (method === 'GET') return DB.paused_tasks || {};
+                if (method === 'POST') { DB.paused_tasks = body; saveDB(); return { ok: true }; }
             }
 
             if (path === '/api/task/break') {
-                if (body && body.paused_tasks !== undefined) LS.set('jae_paused', body.paused_tasks);
-                LS.del('jae_active');
-                return { ok: true, status: 'ok' };
-            }
-
-            if (path === '/api/stats' && method === 'GET') {
-                const rawStats = getStats(dateStr);
-                const dTasks = LS.get(`jae_tasks_${dateStr}`, []);
-                const offlineDone = dTasks.filter(t => t.mode === 'offline' && t.done).length;
-                let baseCoins = (rawStats.total_coins || 0) + (offlineDone * 50);
-
-                if (dateStr === today) {
-                    const deductions = zenBackendState.coin_deductions || 0;
-                    const activeT = LS.get('jae_active', null);
-                    if (activeT && activeT.abs_start) {
-                        const liveSecs = Math.floor((Date.now() - activeT.abs_start) / 1000) + (activeT.elapsed || 0);
-                        rawStats.today_time += liveSecs;
-                        if (activeT.mode === 'focus') {
-                            baseCoins += liveSecs <= 3600 ? Math.floor(liveSecs / 60) : 60 + Math.floor((liveSecs - 3600) / 40);
-                        }
-                    }
-                    rawStats.total_coins = Math.max(0, baseCoins - deductions);
-                    const fStart = LS.get(`jae_first_start_${today}`, 0);
-                    if (fStart > 0) {
-                        const real_el = (Date.now() - fStart) / 1000;
-                        rawStats.grind_ratio = real_el > 0 ? Math.min(1, rawStats.today_time / real_el) : 0;
-                    }
-                    rawStats.lanterns = Math.floor((rawStats.today_time || 0) / 3600);
-                } else {
-                    rawStats.total_coins = baseCoins;
-                }
-                rawStats.zen_momentum = zenBackendState.momentum || 0;
-                return rawStats;
-            }
-
-            if (path === '/api/reset_day') {
-                LS.del(`jae_tasks_${today}`);
-                LS.del(`jae_stats_${today}`);
-                LS.del(`jae_first_start_${today}`);
-                LS.del('jae_active');
+                if (body && body.paused_tasks !== undefined) DB.paused_tasks = body.paused_tasks;
+                delete DB.active_task;
+                saveDB();
                 return { ok: true };
             }
 
-            if (path === '/api/log_session') {
-                if (LS.get('jae_active', null) && zenBackendState.mode) {
-                    const catchupDt = (Date.now() - zenBackendState.last_tick) / 1000;
-                    if (catchupDt > 0) {
-                        zenBackendState.progress = (zenBackendState.progress || 0) + catchupDt;
-                        const cyc = 52 * 60;
-                        while (zenBackendState.progress >= cyc) { zenBackendState.progress -= cyc; zenBackendState.balance += (17 * 60); }
-                    }
-                }
-                zenBackendState.last_tick = Date.now();
-                zenBackendState.last_finish_ts = Date.now();
-                LS.set('jae_zen_state', zenBackendState);
-                LS.del('jae_active');
-
-                const stats = getStats(today);
-                stats.today_time += body.duration || 0;
-                if (body.type !== 'focus') stats.output_time = (stats.output_time || 0) + (body.duration || 0);
-
-                const firstStart = LS.get(`jae_first_start_${today}`, 0) || (Date.now() - (body.duration || 0) * 1000);
-                if (!LS.get(`jae_first_start_${today}`, 0)) LS.set(`jae_first_start_${today}`, firstStart);
-                const real_elapsed = (Date.now() - firstStart) / 1000;
-                stats.grind_ratio = real_elapsed > 0 ? Math.min(1, stats.today_time / real_elapsed) : 0;
-                stats.questions_today += (body.questions || 0);
-
-                const tag = body.tag || 'MISC';
-                if (!stats.subject_breakdown[tag]) stats.subject_breakdown[tag] = { time: 0, q: 0, c: 0, marks: 0, marks_total: 0, train_q: 0, train_c: 0 };
-                const sb = stats.subject_breakdown[tag];
-                sb.time += body.duration || 0;
-                if (body.type === 'training') {
-                    sb.train_q += body.questions || 0; sb.train_c += body.correct || 0;
-                    sb.q += body.questions || 0;       sb.c += body.correct || 0;
-                }
-                if (body.type === 'online_test' || body.type === 'focus' || body.type === 'training') {
-                    sb.marks += Number(body.marks_scored || 0);
-                    sb.marks_total += Number(body.marks_total || 0);
-                }
-                let totQ = 0, totC = 0;
-                Object.values(stats.subject_breakdown).forEach(s => { totQ += s.train_q; totC += s.train_c; });
-                stats.accuracy = totQ > 0 ? (totC / totQ) * 100 : 0;
-
-                let earned = 0;
-                if (body.type === 'focus') {
-                    earned = body.duration <= 3600 ? Math.floor(body.duration / 60) : 60 + Math.floor((body.duration - 3600) / 40);
-                } else {
-                    earned = Number(body.marks_scored || 0);
-                }
-                stats.total_coins = (stats.total_coins || 0) + earned;
-                saveStats(today, stats);
-                return { stats };
+            if (path === '/api/stats' && method === 'GET') {
+                return calculateStats(params.get('date') || today);
             }
 
-            if (path === '/api/zen/tick') {
-                if (zenBackendState.date && zenBackendState.date !== today) {
-                    zenBackendState = { mode: false, balance: 0, progress: 0, penalty: 0, coin_deductions: 0, penalty_accum: 0, has_completed_task: false, last_tick: Date.now(), last_finish_ts: 0, momentum: 0, date: today };
-                }
-                zenBackendState.date = today;
-
-                const now_ts = Date.now();
-                let dt = (now_ts - (zenBackendState.last_tick || now_ts)) / 1000;
-                if (dt < 0) dt = 0;
-                zenBackendState.last_tick = now_ts;
-
-                if (body && body.mode === true) zenBackendState.mode = true;
-
-                const todaySt = getStats(today);
-                zenBackendState.has_completed_task = (todaySt.today_time || 0) > 0;
-                const effectiveStatus = LS.get('jae_active', null) ? 'focus' : ((body && body.status) || 'idle');
-
-                if (zenBackendState.mode && dt > 0) {
-                    if (effectiveStatus === 'focus') {
-                        zenBackendState.progress = (zenBackendState.progress || 0) + dt;
-                        const cyc = 52 * 60;
-                        while (zenBackendState.progress >= cyc) { zenBackendState.progress -= cyc; zenBackendState.balance += (17 * 60); }
-                    } else {
-                        if (dt <= 60) {
-                            let rem = dt;
-                            if (zenBackendState.balance > 0) {
-                                const taken = Math.min(zenBackendState.balance, rem);
-                                zenBackendState.balance -= taken; rem -= taken;
-                            }
-                            if (rem > 0 && zenBackendState.has_completed_task) {
-                                const dTasks = LS.get(`jae_tasks_${today}`, []);
-                                const offDone = dTasks.filter(t => t.mode === 'offline' && t.done).length;
-                                const gross = (todaySt.total_coins || 0) + (offDone * 50);
-                                const net = gross - (zenBackendState.coin_deductions || 0);
-                                if (net > 0) {
-                                    zenBackendState.penalty_accum = (zenBackendState.penalty_accum || 0) + rem;
-                                    let pens = Math.floor(zenBackendState.penalty_accum / 30);
-                                    if (pens > 0) {
-                                        pens = Math.min(pens, net);
-                                        zenBackendState.penalty_accum %= 30;
-                                        zenBackendState.penalty = (zenBackendState.penalty || 0) + pens;
-                                        zenBackendState.coin_deductions = (zenBackendState.coin_deductions || 0) + pens;
-                                    }
-                                } else { zenBackendState.penalty_accum = 0; }
-                            }
+            if (path === '/api/log_session') {
+                let now = Date.now() / 1000;
+                let zen = DB.zen || {};
+                if (DB.active_task && zen.mode) {
+                    let last = zen.last_ts || now;
+                    let dt = now - last;
+                    if (dt > 0) {
+                        zen.progress = (zen.progress || 0) + dt;
+                        let cycleDur = 52 * 60;
+                        while (zen.progress >= cycleDur) {
+                            zen.progress -= cycleDur;
+                            zen.balance = (zen.balance || 0) + (17 * 60);
                         }
                     }
                 }
-                LS.set('jae_zen_state', zenBackendState);
-                return { ...zenBackendState };
+                zen.last_ts = now;
+                zen.last_finish_ts = now;
+                DB.zen = zen;
+
+                DB.logs.push({
+                    id: Date.now(), timestamp: now, date: today,
+                    type: body.type, duration: body.duration || 0,
+                    task_name: body.task_name || 'Unknown', tag: body.tag,
+                    questions_total: body.questions || 0, questions_correct: body.correct || 0,
+                    marks_scored: body.marks_scored || 0, marks_total: body.marks_total || 0
+                });
+                delete DB.active_task;
+                saveDB();
+                return { stats: calculateStats(today) };
             }
 
-            if (path === '/api/system/drain') {
-                const currStats = getStats(today);
-                const target = 8 * 3600;
-                const activeDrain = LS.get('jae_active', null);
-                const elapsedNow = (activeDrain && activeDrain.abs_start) ? Math.floor((Date.now() - activeDrain.abs_start) / 1000) : 0;
-                const totalElapsed = (currStats.today_time || 0) + elapsedNow;
-                const rem = Math.max(0, target - totalElapsed);
-                return {
-                    status: rem > 0 ? 'DISCHARGING' : 'FULL',
-                    level: Math.floor((totalElapsed / target) * 100),
-                    rem: rem <= 0 ? 'TARGET_REACHED' : rem
-                };
-            }
+            if (path === '/api/system/drain') return { status: 'DISCHARGING', level: 100, rem: 8*3600 };
 
-            if (path === '/api/media/info') {
-                // [NATIVE BRIDGE] Check if running inside the compiled Android APK
-                if (window.AndroidBridge) return window.ANDROID_MEDIA_STATE;
-
-                return { title: isPlaying ? STATIONS[currentStationIdx].title : 'SYSTEM IDLE', artist: STATIONS[currentStationIdx].artist, active: isPlaying };
-            }
+            if (path === '/api/media/info') return window.ANDROID_MEDIA_STATE;
 
             if (path === '/api/media/control') {
-                // [NATIVE BRIDGE] Check if running inside the compiled Android APK
                 if (window.AndroidBridge) {
                     window.AndroidBridge.sendMediaCommand(body.action);
                     return { ok: true };
                 }
-
-                if (body.action === 'playpause') {
-                    if (isPlaying) { window.audioPlayer.pause(); isPlaying = false; }
-                    else { window.audioPlayer.play().then(() => isPlaying = true).catch(() => {}); }
-                } else if (body.action === 'next' || body.action === 'prev') {
-                    currentStationIdx = body.action === 'next'
-                        ? (currentStationIdx + 1) % STATIONS.length
-                        : (currentStationIdx - 1 + STATIONS.length) % STATIONS.length;
-                    window.audioPlayer.src = STATIONS[currentStationIdx].url;
-                    if (isPlaying) window.audioPlayer.play().catch(() => {});
-                }
                 return { ok: true };
             }
-
-            if (path === '/api/media/rvx_search') {
-                const q = (body && body.query) ? body.query.toLowerCase() : '';
-                if (q.includes('lofi') || q.includes('girl') || q.includes('study')) currentStationIdx = 0;
-                else if (q.includes('synth') || q.includes('retro') || q.includes('wave')) currentStationIdx = 1;
-                else if (q.includes('class') || q.includes('piano') || q.includes('bach')) currentStationIdx = 2;
-                else currentStationIdx = (currentStationIdx + 1) % STATIONS.length;
-                window.audioPlayer.src = STATIONS[currentStationIdx].url;
-                window.audioPlayer.play().then(() => isPlaying = true).catch(() => {});
+            
+            if (path === '/api/reset_day') {
+                DB.logs = DB.logs.filter(l => l.date !== today);
+                delete DB.tasks_state[today];
+                DB.zen = { date: today, mode: false, balance: 0, progress: 0, penalty: 0, coin_deductions: 0, penalty_accum: 0, has_completed_task: false };
+                saveDB();
                 return { ok: true };
             }
-
-            if (path === '/api/adb/config') return { status: 'ok' };
 
             return {};
         };
 
         const _realFetch = window.fetch;
         window.fetch = async (url, options = {}) => {
-            if (typeof url === 'string') {
-                const idx = url.indexOf('/api/');
-                if (idx !== -1) {
-                    const apiPath = url.slice(idx);
-                    try {
-                        const data = await mockApi(apiPath, options);
-                        return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
-                    } catch (e) {
-                        console.error('MOCK API ERROR:', e);
-                        return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
-                    }
-                }
+            if (typeof url === 'string' && url.includes('/api/')) {
+                const apiPath = url.slice(url.indexOf('/api/'));
+                try {
+                    const data = await mockApi(apiPath, options);
+                    return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+                } catch (e) { return { ok: false, status: 500, json: async () => ({}), text: async () => '' }; }
             }
             return _realFetch(url, options);
         };
-
-        console.log('[MALACHITE] Offline backend active. window.fetch intercepted.');
     })();
     </script>
 

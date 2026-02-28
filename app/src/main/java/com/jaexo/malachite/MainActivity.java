@@ -4,19 +4,50 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.Toast;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 
 public class MainActivity extends Activity {
     WebView webView;
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
         setContentView(webView);
-        
+
+        // Permissions Request Logic
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    intent.addCategory("android.intent.category.DEFAULT");
+                    intent.setData(Uri.parse(String.format("package:%s", getPackageName())));
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    startActivity(intent);
+                }
+            }
+        } else {
+            requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+        }
+
+        String listeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+        if (listeners == null || !listeners.contains(getPackageName())) {
+            Toast.makeText(this, "Please ENABLE Notification Access for Malachite to read Music", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+        }
+
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -29,22 +60,43 @@ public class MainActivity extends Activity {
                 i.putExtra("action", action);
                 sendBroadcast(i);
             }
+
+            @JavascriptInterface
+            public String readFile(String path) {
+                try {
+                    File f = new File(path);
+                    if (!f.exists()) return "";
+                    byte[] bytes = new byte[(int) f.length()];
+                    FileInputStream in = new FileInputStream(f);
+                    in.read(bytes);
+                    in.close();
+                    return new String(bytes, "UTF-8");
+                } catch (Exception e) { return ""; }
+            }
+
+            @JavascriptInterface
+            public void writeFile(String path, String data) {
+                try {
+                    File f = new File(path);
+                    if(!f.getParentFile().exists()) f.getParentFile().mkdirs();
+                    FileOutputStream out = new FileOutputStream(f);
+                    out.write(data.getBytes("UTF-8"));
+                    out.close();
+                } catch (Exception e) { e.printStackTrace(); }
+            }
         }, "AndroidBridge");
 
         webView.loadUrl("file:///android_asset/jaexo-malachite.html");
-
-        // Request notification listener permission to read Spotify/etc
-        String listeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
-        if (listeners == null || !listeners.contains(getPackageName())) {
-            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
-        }
 
         registerReceiver(new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent intent) {
                 String t = intent.getStringExtra("title");
                 String a = intent.getStringExtra("artist");
                 String act = intent.getStringExtra("active");
-                webView.post(() -> webView.evaluateJavascript("window.updateNativeMedia('"+t+"', '"+a+"', '"+act+"');", null));
+                if(t != null) {
+                    webView.post(() -> webView.evaluateJavascript(
+                        "window.updateNativeMedia('"+t.replace("'","\\'")+"', '"+a.replace("'","\\'")+"', '"+act+"');", null));
+                }
             }
         }, new IntentFilter("MEDIA_UPDATE"));
     }
