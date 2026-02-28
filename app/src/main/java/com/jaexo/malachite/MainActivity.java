@@ -24,10 +24,7 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
-        
-        // This single line fixes alert(), confirm(), and prompt()
         webView.setWebChromeClient(new WebChromeClient());
-        
         setContentView(webView);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -114,5 +111,32 @@ public class MainActivity extends Activity {
                 }
             }
         }, new IntentFilter("MEDIA_UPDATE"));
+    }
+
+    // === NEW: LIFECYCLE DEEP FREEZE LOGIC ===
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (webView != null) {
+            webView.onPause();
+            webView.pauseTimers(); // Completely freezes all JavaScript intervals
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.resumeTimers(); // Wakes up JS logic
+            webView.onResume();
+        }
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (webView != null) {
+            webView.destroy();
+        }
     }
 }

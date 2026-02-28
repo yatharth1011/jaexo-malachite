@@ -56,7 +56,7 @@ fs.writeFileSync('app/src/main/AndroidManifest.xml', `<?xml version="1.0" encodi
     </application>
 </manifest>`);
 
-// 3. MainActivity (ADDED WebChromeClient FOR ALERTS/CONFIRMS)
+// 3. MainActivity (ADDED LIFECYCLE FREEZE LOGIC)
 fs.writeFileSync('app/src/main/java/com/jaexo/malachite/MainActivity.java', `package com.jaexo.malachite;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -83,10 +83,7 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
-        
-        // This single line fixes alert(), confirm(), and prompt()
         webView.setWebChromeClient(new WebChromeClient());
-        
         setContentView(webView);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -174,6 +171,33 @@ public class MainActivity extends Activity {
             }
         }, new IntentFilter("MEDIA_UPDATE"));
     }
+
+    // === NEW: LIFECYCLE DEEP FREEZE LOGIC ===
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (webView != null) {
+            webView.onPause();
+            webView.pauseTimers(); // Completely freezes all JavaScript intervals
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.resumeTimers(); // Wakes up JS logic
+            webView.onResume();
+        }
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (webView != null) {
+            webView.destroy();
+        }
+    }
 }`);
 
 // 4. MediaListener
@@ -239,4 +263,4 @@ fs.writeFileSync('app/build.gradle', "plugins { id 'com.android.application' }\n
 // 6. GitHub Actions
 fs.writeFileSync('.github/workflows/build.yml', "name: Build APK\non: [push, workflow_dispatch]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with: { distribution: 'temurin', java-version: '17' }\n      - uses: gradle/actions/setup-gradle@v3\n        with: { gradle-version: '8.4' }\n      - run: gradle assembleDebug\n      - uses: actions/upload-artifact@v4\n        with: { name: Malachite-APK, path: app/build/outputs/apk/debug/app-debug.apk }");
 
-console.log("✅ Fixes applied: JavaScript Dialogs (confirm/alert) enabled!");
+console.log("✅ Fixes applied: Android WebView background freezing implemented.");
