@@ -547,7 +547,13 @@
                     return { ok: true };
                 }
                 if (method === 'DELETE') {
-                    delete DB.active_task;
+                    
+            if (body.section_id) { 
+                DB.tdx_progress = DB.tdx_progress || {}; 
+                const q_done = body.type === 'training' ? (body.correct || 0) : (body.questions || 0);
+                DB.tdx_progress[body.section_id] = (DB.tdx_progress[body.section_id] || 0) + q_done; 
+            }
+    delete DB.active_task;
                     saveDB();
                     return { ok: true };
                 }
@@ -996,7 +1002,7 @@
             }, []); 
             const [stats, setStats] = React.useState({today_time:0, accuracy:0, subject_breakdown:{}});
             
-            const [summaryOpen, setSummaryOpen] = React.useState(false);
+            const [summaryOpen, setSummaryOpen] = React.useState(false);\n            const [showTdx, setShowTdx] = React.useState(false);
             const [configTask, setConfigTask] = React.useState(null);
             const [probCount, setProbCount] = React.useState(15);
 
@@ -1331,7 +1337,7 @@
 
                         <div className="deck-row">
                             <button className="deck-btn" style={{flex:1}} onClick={addTask}>+ ADD TASK</button>
-                            <button className="deck-btn" style={{flex:1}} onClick={()=>setSummaryOpen(true)}>MISSION REPORT</button>
+                            <button className="deck-btn" style={{flex:1}} onClick={()=>setSummaryOpen(true)}>MISSION REPORT</button>\n                            <button className="deck-btn" style={{flex:1}} onClick={()=>setShowTdx(true)}>TDX PLANNER</button>
                         </div>
                     </div>
 
@@ -1420,7 +1426,7 @@
                         />
                     )}
 
-                    {summaryOpen && <MissionReport stats={stats} date={date} scheduleItem={scheduleItem} onClose={()=>setSummaryOpen(false)} />}
+                    {showTdx && <TDXInterface db={DB} onClose={()=>setShowTdx(false)} onPushTasks={(tasks, date) => { setDate(date); saveTasks(tasks); }} />}\n\n                    {summaryOpen && <MissionReport stats={stats} date={date} scheduleItem={scheduleItem} onClose={()=>setSummaryOpen(false)} />}
 
                 </div>
             );
